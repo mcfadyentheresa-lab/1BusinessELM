@@ -6,24 +6,22 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
 import { formatCurrency, cn } from "@/lib/utils";
 import {
-  Search, Plus, ShoppingCart, ExternalLink, Loader2, Download,
-  ChevronDown, Phone, Mail, MapPin, Globe, Star,
+  Search, Plus, Package, ExternalLink, Loader2, Download,
+  ChevronDown, Phone, Mail, MapPin, Globe, Star, Layers,
+  Pencil, Trash2, Copy, Calculator, Building2, ChevronRight,
+  Info,
 } from "lucide-react";
 
-interface PriceForm {
-  product_name: string;
-  product_code: string;
-  supplier_id: string;
-  unit_price: string;
-  unit_type: string;
-  product_url: string;
-  notes: string;
-}
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 interface Supplier {
   id: number;
@@ -33,20 +31,77 @@ interface Supplier {
   address: string | null;
   website: string | null;
   is_preferred: boolean;
+  is_active: boolean;
   notes: string | null;
 }
 
-function SupplierPanel({
-  supplier,
-  isSelected,
-  count,
-  onClick,
-}: {
-  supplier: Supplier;
-  isSelected: boolean;
-  count: number;
-  onClick: () => void;
-}) {
+interface Material {
+  id: number;
+  product_name: string;
+  product_code: string | null;
+  unit_price: string;
+  unit_type: string;
+  product_url: string | null;
+  notes: string | null;
+  last_updated: string | null;
+  coverage_value: number | null;
+  coverage_unit: string | null;
+  waste_pct: number | null;
+  quality_tier: string | null;
+  supplier: { id: number; name: string; is_preferred: boolean } | null;
+  category: { name: string } | null;
+}
+
+interface AssemblyMaterial {
+  id: number;
+  material_id: number | null;
+  material_name: string;
+  unit_type: string;
+  qty_per_sqft: number;
+  unit_cost: number;
+  waste_pct: number;
+  notes: string | null;
+  sort_order: number;
+}
+
+interface Assembly {
+  id: number;
+  name: string;
+  description: string | null;
+  quality_tier: string;
+  notes: string | null;
+  is_active: boolean;
+  category: { name: string } | null;
+  assembly_materials: AssemblyMaterial[];
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+const UNIT_TYPES = [
+  "each", "per linear ft", "sq ft", "board ft", "per sheet",
+  "per bag", "roll", "gallon", "litre", "lb", "kg", "box",
+  "hour", "per unit", "bundle", "cubic yard",
+];
+
+const QUALITY_COLORS: Record<string, string> = {
+  basic:   "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  mid:     "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  premium: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+};
+
+function calcLineEffectiveCost(line: AssemblyMaterial): number {
+  return line.unit_cost * line.qty_per_sqft * (1 + (line.waste_pct ?? 0) / 100);
+}
+
+function calcAssemblyCostPerSqft(assembly: Assembly): number {
+  return assembly.assembly_materials.reduce((sum, l) => sum + calcLineEffectiveCost(l), 0);
+}
+
+// ─── Sub-components ──────────────────────────────────────────────────────────
+
+function SupplierCard({
+  supplier, isSelected, count, onClick,
+}: { supplier: Supplier; isSelected: boolean; count: number; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -77,9 +132,9 @@ function SupplierPanel({
   );
 }
 
-function SupplierDetail({ supplier }: { supplier: Supplier }) {
+function SupplierInfoPanel({ supplier }: { supplier: Supplier }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+    <div className="rounded-lg border border-border bg-card p-4 space-y-3 mb-5">
       <div>
         <h3 className="font-semibold text-foreground text-sm" style={{ fontFamily: "var(--font-serif)" }}>
           {supplier.name}
@@ -93,32 +148,23 @@ function SupplierDetail({ supplier }: { supplier: Supplier }) {
       <div className="space-y-1.5">
         {supplier.phone && (
           <a href={`tel:${supplier.phone}`} className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
-            <Phone className="h-3 w-3 shrink-0" />
-            <span>{supplier.phone}</span>
+            <Phone className="h-3 w-3 shrink-0" /> <span>{supplier.phone}</span>
           </a>
         )}
         {supplier.email && (
           <a href={`mailto:${supplier.email}`} className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
-            <Mail className="h-3 w-3 shrink-0" />
-            <span className="truncate">{supplier.email}</span>
+            <Mail className="h-3 w-3 shrink-0" /> <span className="truncate">{supplier.email}</span>
           </a>
         )}
         {supplier.address && (
           <div className="flex items-start gap-2 text-xs text-muted-foreground">
-            <MapPin className="h-3 w-3 shrink-0 mt-px" />
-            <span>{supplier.address}</span>
+            <MapPin className="h-3 w-3 shrink-0 mt-px" /> <span>{supplier.address}</span>
           </div>
         )}
         {supplier.website && (
-          <a
-            href={supplier.website}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 text-xs text-primary hover:underline"
-          >
-            <Globe className="h-3 w-3 shrink-0" />
-            <span>Website</span>
-            <ExternalLink className="h-2.5 w-2.5" />
+          <a href={supplier.website} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-2 text-xs text-primary hover:underline">
+            <Globe className="h-3 w-3 shrink-0" /> Website <ExternalLink className="h-2.5 w-2.5" />
           </a>
         )}
       </div>
@@ -131,22 +177,23 @@ function SupplierDetail({ supplier }: { supplier: Supplier }) {
   );
 }
 
-export default function SupplierPrices() {
+// ─── Materials Tab ───────────────────────────────────────────────────────────
+
+function MaterialsTab({
+  suppliers,
+}: { suppliers: Supplier[] }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [selectedSupplierId, setSelectedSupplierId] = useState<number | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [selectedCategory, setSelectedCategory] = useState("all");
   const [expandedNotes, setExpandedNotes] = useState<Set<number>>(new Set());
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<PriceForm>({
-    product_name: "",
-    product_code: "",
-    supplier_id: "",
-    unit_price: "",
-    unit_type: "each",
-    product_url: "",
-    notes: "",
+  const [addOpen, setAddOpen] = useState(false);
+  const [form, setForm] = useState({
+    product_name: "", product_code: "", supplier_id: "",
+    unit_price: "", unit_type: "each", coverage_value: "",
+    coverage_unit: "sq ft", waste_pct: "10", quality_tier: "mid",
+    product_url: "", notes: "",
   });
 
   const { data: prices, isLoading } = useQuery({
@@ -156,31 +203,23 @@ export default function SupplierPrices() {
         .from("supplier_prices")
         .select("*, supplier:suppliers(id,name,is_preferred), category:cost_categories(name)")
         .order("product_name", { ascending: true });
-      return data ?? [];
+      return (data ?? []) as Material[];
     },
   });
 
-  const { data: suppliers } = useQuery({
-    queryKey: ["suppliers-list"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("suppliers")
-        .select("id,name,phone,email,address,website,is_preferred,notes")
-        .eq("is_active", true)
-        .order("is_preferred", { ascending: false });
-      return (data ?? []) as Supplier[];
-    },
-  });
-
-  const addPrice = useMutation({
+  const addMaterial = useMutation({
     mutationFn: async () => {
-      if (!form.product_name || !form.unit_price) throw new Error("Product name and price are required");
+      if (!form.product_name || !form.unit_price) throw new Error("Name and price required");
       const { error } = await supabase.from("supplier_prices").insert({
         product_name: form.product_name,
         product_code: form.product_code || null,
         supplier_id: form.supplier_id ? parseInt(form.supplier_id) : null,
         unit_price: form.unit_price,
         unit_type: form.unit_type,
+        coverage_value: form.coverage_value ? parseFloat(form.coverage_value) : null,
+        coverage_unit: form.coverage_value ? form.coverage_unit : null,
+        waste_pct: parseFloat(form.waste_pct) || 10,
+        quality_tier: form.quality_tier,
         product_url: form.product_url || null,
         notes: form.notes || null,
         last_updated: new Date().toISOString().slice(0, 10),
@@ -188,75 +227,66 @@ export default function SupplierPrices() {
       if (error) throw error;
     },
     onSuccess: () => {
-      toast({ title: "Price added" });
-      setOpen(false);
-      setForm({ product_name: "", product_code: "", supplier_id: "", unit_price: "", unit_type: "each", product_url: "", notes: "" });
+      toast({ title: "Material added" });
+      setAddOpen(false);
+      setForm({ product_name: "", product_code: "", supplier_id: "", unit_price: "", unit_type: "each", coverage_value: "", coverage_unit: "sq ft", waste_pct: "10", quality_tier: "mid", product_url: "", notes: "" });
       qc.invalidateQueries({ queryKey: ["supplier-prices"] });
     },
-    onError: (e: any) => toast({ title: "Failed to add price", description: e.message, variant: "destructive" }),
+    onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
+  const isAdmin = user?.role === "admin";
   const selectedSupplier = suppliers?.find((s) => s.id === selectedSupplierId) ?? null;
-
-  const countBySupplierId = (prices ?? []).reduce<Record<number, number>>((acc, p: any) => {
+  const countBySupplierId = (prices ?? []).reduce<Record<number, number>>((acc, p) => {
     const sid = p.supplier?.id;
     if (sid) acc[sid] = (acc[sid] ?? 0) + 1;
     return acc;
   }, {});
 
   const categories = Array.from(
-    new Set((prices ?? []).map((p: any) => p.category?.name).filter(Boolean))
+    new Set((prices ?? []).map((p) => p.category?.name).filter(Boolean))
   ).sort() as string[];
 
-  const filtered = (prices ?? []).filter((p: any) => {
+  const filtered = (prices ?? []).filter((p) => {
     const matchesSupplier = selectedSupplierId === null || p.supplier?.id === selectedSupplierId;
     const matchesCategory = selectedCategory === "all" || p.category?.name === selectedCategory;
-    const matchesSearch =
-      !search ||
-      p.product_name.toLowerCase().includes(search.toLowerCase()) ||
-      (p.product_code ?? "").toLowerCase().includes(search.toLowerCase()) ||
-      (p.notes ?? "").toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = !search
+      || p.product_name.toLowerCase().includes(search.toLowerCase())
+      || (p.product_code ?? "").toLowerCase().includes(search.toLowerCase())
+      || (p.notes ?? "").toLowerCase().includes(search.toLowerCase());
     return matchesSupplier && matchesCategory && matchesSearch;
   });
 
-  const isAdmin = user?.role === "admin";
-
-  const toggleNotes = (id: number) => {
-    setExpandedNotes((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
   const handleExportCSV = () => {
     const rows = [
-      ["Product Name", "Product Code", "Supplier", "Category", "Unit Price (CAD)", "Unit Type", "Notes", "URL"],
-      ...(filtered ?? []).map((p: any) => [
+      ["Product", "Code", "Supplier", "Category", "Price (CAD)", "Unit", "Coverage", "Waste %", "Tier", "Updated"],
+      ...filtered.map((p) => [
         p.product_name,
         p.product_code ?? "",
         p.supplier?.name ?? "",
         p.category?.name ?? "",
         parseFloat(p.unit_price).toFixed(2),
-        p.unit_type.replace(/_/g, " "),
-        p.notes ?? "",
-        p.product_url ?? "",
+        p.unit_type,
+        p.coverage_value ? `${p.coverage_value} ${p.coverage_unit ?? ""}` : "",
+        String(p.waste_pct ?? 10),
+        p.quality_tier ?? "mid",
+        p.last_updated ? new Date(p.last_updated).toLocaleDateString("en-CA") : "",
       ]),
     ];
-    const csv = rows.map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `supplier-prices-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `pricing-book-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   return (
     <div className="flex h-full min-h-0 overflow-hidden">
-      {/* Supplier sidebar — desktop only */}
-      <aside className="hidden lg:flex flex-col w-56 shrink-0 border-r border-border bg-muted/20 overflow-y-auto">
+      {/* Supplier sidebar */}
+      <aside className="hidden lg:flex flex-col w-52 shrink-0 border-r border-border bg-muted/20 overflow-y-auto">
         <div className="px-3 pt-5 pb-3 border-b border-border">
           <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold mb-2">Suppliers</p>
           <button
@@ -279,7 +309,7 @@ export default function SupplierPrices() {
         </div>
         <div className="px-3 py-3 space-y-1.5 flex-1">
           {(suppliers ?? []).map((s) => (
-            <SupplierPanel
+            <SupplierCard
               key={s.id}
               supplier={s}
               isSelected={selectedSupplierId === s.id}
@@ -290,49 +320,30 @@ export default function SupplierPrices() {
         </div>
       </aside>
 
-      {/* Main content */}
       <div className="flex-1 min-w-0 overflow-y-auto">
         <div className="p-6 max-w-5xl mx-auto">
-          {/* Header */}
-          <div className="flex items-start justify-between mb-6">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Resources</p>
-              <h1
-                className="text-3xl font-bold text-foreground leading-tight"
-                style={{ fontFamily: "var(--font-serif)", letterSpacing: "-0.025em" }}
-              >
-                Supplier Price Book
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                Track material prices from your suppliers
-              </p>
+          {/* Header row */}
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input className="pl-9" placeholder="Search name, code, notes…" value={search} onChange={(e) => setSearch(e.target.value)} />
+              </div>
+              <p className="text-sm text-muted-foreground shrink-0">{filtered.length} items</p>
             </div>
             {isAdmin && (
-              <div className="flex gap-2 mt-1 shrink-0">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={handleExportCSV}
-                  disabled={!prices || prices.length === 0}
-                >
-                  <Download className="h-3.5 w-3.5" /> Export CSV
+              <div className="flex gap-2 shrink-0">
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExportCSV} disabled={!prices?.length}>
+                  <Download className="h-3.5 w-3.5" /> Export
                 </Button>
-                <Button size="sm" className="gap-1.5" onClick={() => setOpen(true)}>
-                  <Plus className="h-3.5 w-3.5" /> Add Price
+                <Button size="sm" className="gap-1.5" onClick={() => setAddOpen(true)}>
+                  <Plus className="h-3.5 w-3.5" /> Add Material
                 </Button>
               </div>
             )}
           </div>
 
-          {/* Supplier detail card — shown when a supplier is selected */}
-          {selectedSupplier && (
-            <div className="mb-5">
-              <SupplierDetail supplier={selectedSupplier} />
-            </div>
-          )}
-
-          {/* Mobile supplier selector */}
+          {/* Mobile supplier select */}
           <div className="lg:hidden mb-4">
             <Select
               value={selectedSupplierId === null ? "all" : String(selectedSupplierId)}
@@ -342,31 +353,21 @@ export default function SupplierPrices() {
                 <SelectValue placeholder="All suppliers" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All suppliers ({prices?.length ?? 0})</SelectItem>
+                <SelectItem value="all">All suppliers</SelectItem>
                 {(suppliers ?? []).map((s) => (
-                  <SelectItem key={s.id} value={String(s.id)}>
-                    {s.name} ({countBySupplierId[s.id] ?? 0})
-                  </SelectItem>
+                  <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          {/* Category filter chips */}
+          {/* Supplier detail */}
+          {selectedSupplier && <SupplierInfoPanel supplier={selectedSupplier} />}
+
+          {/* Category chips */}
           {categories.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-4">
-              <button
-                onClick={() => setSelectedCategory("all")}
-                className={cn(
-                  "px-3 py-1 rounded-full text-xs border transition-colors",
-                  selectedCategory === "all"
-                    ? "bg-foreground text-background border-foreground"
-                    : "bg-card text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground"
-                )}
-              >
-                All
-              </button>
-              {categories.map((cat) => (
+              {["all", ...categories].map((cat) => (
                 <button
                   key={cat}
                   onClick={() => setSelectedCategory(selectedCategory === cat ? "all" : cat)}
@@ -377,29 +378,13 @@ export default function SupplierPrices() {
                       : "bg-card text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground"
                   )}
                 >
-                  {cat}
+                  {cat === "all" ? "All" : cat}
                 </button>
               ))}
             </div>
           )}
 
-          {/* Search + result count */}
-          <div className="flex items-center gap-3 mb-5">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="Search by product name, code, or notes…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            <p className="text-sm text-muted-foreground shrink-0">
-              {filtered.length} {filtered.length === 1 ? "product" : "products"}
-            </p>
-          </div>
-
-          {/* Price table */}
+          {/* Table */}
           {isLoading ? (
             <Skeleton className="h-64 rounded-xl" />
           ) : filtered.length > 0 ? (
@@ -407,109 +392,103 @@ export default function SupplierPrices() {
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 border-b border-border">
                   <tr>
-                    <th className="text-left px-4 py-3 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Product</th>
-                    <th className="text-left px-4 py-3 text-[10px] uppercase tracking-wider text-muted-foreground font-medium hidden sm:table-cell">Category</th>
-                    <th className="text-right px-4 py-3 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Price</th>
-                    <th className="text-right px-4 py-3 text-[10px] uppercase tracking-wider text-muted-foreground font-medium hidden md:table-cell">Updated</th>
-                    <th className="px-2 py-3 w-8" />
+                    <th className="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Material</th>
+                    <th className="text-left px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted-foreground font-medium hidden sm:table-cell">Category</th>
+                    <th className="text-right px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Price</th>
+                    <th className="text-right px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted-foreground font-medium hidden lg:table-cell">Coverage</th>
+                    <th className="text-right px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted-foreground font-medium hidden xl:table-cell">Waste</th>
+                    <th className="text-right px-4 py-2.5 text-[10px] uppercase tracking-wider text-muted-foreground font-medium hidden md:table-cell">Updated</th>
+                    <th className="px-2 py-2.5 w-8" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {filtered.map((p: any) => {
+                  {filtered.map((p) => {
                     const hasNotes = !!p.notes;
                     const isExpanded = expandedNotes.has(p.id);
+                    const effectiveSqFtCost = p.coverage_value && p.coverage_value > 0
+                      ? (parseFloat(p.unit_price) / p.coverage_value) * (1 + (p.waste_pct ?? 10) / 100)
+                      : null;
                     return (
                       <>
-                        <tr key={p.id} className={cn("hover:bg-muted/30 transition-colors", isExpanded && "bg-muted/20")}>
+                        <tr key={p.id} className={cn("hover:bg-muted/30 transition-colors group", isExpanded && "bg-muted/20")}>
                           <td className="px-4 py-3">
-                            <div className="flex items-start gap-1.5">
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="font-medium text-foreground leading-snug">{p.product_name}</span>
-                                  {p.product_url && (
-                                    <a
-                                      href={p.product_url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-muted-foreground hover:text-primary shrink-0"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <ExternalLink className="h-3 w-3" />
-                                    </a>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                  {p.product_code && (
-                                    <span
-                                      className="text-[10px] text-muted-foreground"
-                                      style={{ fontFamily: "var(--font-mono)" }}
-                                    >
-                                      {p.product_code}
-                                    </span>
-                                  )}
-                                  {selectedSupplierId === null && p.supplier?.name && (
-                                    <span className="text-[10px] text-muted-foreground border border-border/60 rounded px-1.5 py-px">
-                                      {p.supplier.name}
-                                    </span>
-                                  )}
-                                </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-medium text-foreground leading-snug">{p.product_name}</span>
+                                {p.product_url && (
+                                  <a href={p.product_url} target="_blank" rel="noopener noreferrer"
+                                    className="text-muted-foreground hover:text-primary shrink-0"
+                                    onClick={(e) => e.stopPropagation()}>
+                                    <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                )}
+                                {p.quality_tier && p.quality_tier !== "mid" && (
+                                  <span className={cn("text-[9px] px-1.5 py-px rounded font-semibold uppercase tracking-wide", QUALITY_COLORS[p.quality_tier])}>
+                                    {p.quality_tier}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                {p.product_code && (
+                                  <span className="text-[10px] text-muted-foreground" style={{ fontFamily: "var(--font-mono)" }}>
+                                    {p.product_code}
+                                  </span>
+                                )}
+                                {selectedSupplierId === null && p.supplier?.name && (
+                                  <span className="text-[10px] text-muted-foreground border border-border/60 rounded px-1.5 py-px">
+                                    {p.supplier.name}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </td>
                           <td className="px-4 py-3 hidden sm:table-cell">
-                            {p.category?.name ? (
-                              <span className="text-xs text-muted-foreground">{p.category.name}</span>
+                            <span className="text-xs text-muted-foreground">{p.category?.name ?? "—"}</span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <span className="font-semibold text-foreground block text-xs" style={{ fontFamily: "var(--font-mono)" }}>
+                              {formatCurrency(parseFloat(p.unit_price))}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground block">{p.unit_type.replace(/_/g, " ")}</span>
+                          </td>
+                          <td className="px-4 py-3 text-right hidden lg:table-cell">
+                            {p.coverage_value ? (
+                              <div>
+                                <span className="text-xs text-foreground block" style={{ fontFamily: "var(--font-mono)" }}>
+                                  {p.coverage_value} {p.coverage_unit}
+                                </span>
+                                {effectiveSqFtCost && (
+                                  <span className="text-[10px] text-muted-foreground block">
+                                    ≈ {formatCurrency(effectiveSqFtCost)}/sqft
+                                  </span>
+                                )}
+                              </div>
                             ) : (
                               <span className="text-xs text-muted-foreground/30">—</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-right">
-                            <span
-                              className="font-semibold text-foreground block"
-                              style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}
-                            >
-                              {formatCurrency(parseFloat(p.unit_price))}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground block">
-                              {p.unit_type.replace(/_/g, " ")}
-                            </span>
+                          <td className="px-4 py-3 text-right hidden xl:table-cell">
+                            <span className="text-xs text-muted-foreground">{p.waste_pct ?? 10}%</span>
                           </td>
                           <td className="px-4 py-3 text-right hidden md:table-cell">
                             <span className="text-xs text-muted-foreground">
-                              {p.last_updated
-                                ? new Date(p.last_updated).toLocaleDateString("en-CA", {
-                                    month: "short",
-                                    day: "numeric",
-                                    year: "numeric",
-                                  })
-                                : "—"}
+                              {p.last_updated ? new Date(p.last_updated).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" }) : "—"}
                             </span>
                           </td>
                           <td className="px-2 py-3 w-8 text-center">
                             {hasNotes && (
                               <button
-                                onClick={() => toggleNotes(p.id)}
-                                className={cn(
-                                  "rounded p-1 transition-colors",
-                                  isExpanded
-                                    ? "text-primary bg-primary/10"
-                                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                                )}
-                                title="Toggle source notes"
+                                onClick={() => setExpandedNotes((prev) => { const n = new Set(prev); n.has(p.id) ? n.delete(p.id) : n.add(p.id); return n; })}
+                                className={cn("rounded p-1 transition-colors", isExpanded ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted")}
                               >
-                                <ChevronDown
-                                  className={cn(
-                                    "h-3.5 w-3.5 transition-transform duration-150",
-                                    isExpanded && "rotate-180"
-                                  )}
-                                />
+                                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-180")} />
                               </button>
                             )}
                           </td>
                         </tr>
                         {hasNotes && isExpanded && (
                           <tr key={`${p.id}-notes`} className="bg-muted/10">
-                            <td colSpan={5} className="px-4 pb-3 pt-0">
+                            <td colSpan={7} className="px-4 pb-3 pt-0">
                               <p className="text-xs text-muted-foreground leading-relaxed border-l-2 border-primary/30 pl-3 py-1 ml-0.5">
                                 {p.notes}
                               </p>
@@ -524,51 +503,36 @@ export default function SupplierPrices() {
             </div>
           ) : (
             <div className="text-center py-16 border border-dashed border-border rounded-xl">
-              <ShoppingCart className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
-              <p className="text-muted-foreground">No products match</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                {search || selectedSupplierId !== null || selectedCategory !== "all"
-                  ? "Try adjusting your filters."
-                  : "Add receipts to projects to build your price book automatically."}
-              </p>
+              <Package className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-muted-foreground">No materials match</p>
+              <p className="text-sm text-muted-foreground mt-1">Adjust filters or add a material.</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Add price dialog */}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md">
+      {/* Add material dialog */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Add Supplier Price</DialogTitle>
+            <DialogTitle>Add Material</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5">
               <Label>Product Name <span className="text-destructive">*</span></Label>
-              <Input
-                placeholder="e.g. 2x4 Lumber 8ft"
-                value={form.product_name}
-                onChange={(e) => setForm((f) => ({ ...f, product_name: e.target.value }))}
-                autoFocus
-              />
+              <Input placeholder="e.g. 2x6 Spruce 10ft" value={form.product_name} onChange={(e) => setForm((f) => ({ ...f, product_name: e.target.value }))} autoFocus />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Product Code</Label>
-                <Input
-                  placeholder="SKU or code"
-                  value={form.product_code}
-                  onChange={(e) => setForm((f) => ({ ...f, product_code: e.target.value }))}
-                />
+                <Label>Product Code / SKU</Label>
+                <Input placeholder="SKU" value={form.product_code} onChange={(e) => setForm((f) => ({ ...f, product_code: e.target.value }))} />
               </div>
               <div className="space-y-1.5">
                 <Label>Supplier</Label>
                 <Select value={form.supplier_id} onValueChange={(v) => setForm((f) => ({ ...f, supplier_id: v }))}>
                   <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
                   <SelectContent>
-                    {(suppliers ?? []).map((s) => (
-                      <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                    ))}
+                    {(suppliers ?? []).map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -576,67 +540,699 @@ export default function SupplierPrices() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Unit Price <span className="text-destructive">*</span></Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="0.00"
-                  value={form.unit_price}
-                  onChange={(e) => setForm((f) => ({ ...f, unit_price: e.target.value }))}
-                />
+                <Input type="number" step="0.01" min="0" placeholder="0.00" value={form.unit_price} onChange={(e) => setForm((f) => ({ ...f, unit_price: e.target.value }))} />
               </div>
               <div className="space-y-1.5">
                 <Label>Unit Type</Label>
                 <Select value={form.unit_type} onValueChange={(v) => setForm((f) => ({ ...f, unit_type: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="each">Each</SelectItem>
-                    <SelectItem value="per linear ft">Per linear ft</SelectItem>
-                    <SelectItem value="sq_ft">Sq ft</SelectItem>
-                    <SelectItem value="board_ft">Board ft</SelectItem>
-                    <SelectItem value="per sheet">Per sheet</SelectItem>
-                    <SelectItem value="per bag">Per bag</SelectItem>
-                    <SelectItem value="roll">Roll</SelectItem>
-                    <SelectItem value="gallon">Gallon</SelectItem>
-                    <SelectItem value="litre">Litre</SelectItem>
-                    <SelectItem value="lb">lb</SelectItem>
-                    <SelectItem value="kg">kg</SelectItem>
-                    <SelectItem value="box">Box</SelectItem>
-                    <SelectItem value="hour">Hour</SelectItem>
-                    <SelectItem value="per unit">Per unit</SelectItem>
+                    {UNIT_TYPES.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5 col-span-2">
+                <Label>Coverage Value</Label>
+                <Input type="number" step="0.01" min="0" placeholder="e.g. 32" value={form.coverage_value} onChange={(e) => setForm((f) => ({ ...f, coverage_value: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Coverage Unit</Label>
+                <Input placeholder="sq ft" value={form.coverage_unit} onChange={(e) => setForm((f) => ({ ...f, coverage_unit: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Waste %</Label>
+                <Input type="number" step="1" min="0" max="50" value={form.waste_pct} onChange={(e) => setForm((f) => ({ ...f, waste_pct: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Quality Tier</Label>
+                <Select value={form.quality_tier} onValueChange={(v) => setForm((f) => ({ ...f, quality_tier: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="basic">Basic</SelectItem>
+                    <SelectItem value="mid">Mid</SelectItem>
+                    <SelectItem value="premium">Premium</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label>Product URL</Label>
-              <Input
-                placeholder="https://…"
-                value={form.product_url}
-                onChange={(e) => setForm((f) => ({ ...f, product_url: e.target.value }))}
-              />
+              <Label>Source URL</Label>
+              <Input placeholder="https://…" value={form.product_url} onChange={(e) => setForm((f) => ({ ...f, product_url: e.target.value }))} />
             </div>
             <div className="space-y-1.5">
-              <Label>Source / Notes</Label>
-              <Input
-                placeholder="e.g. Verified 2026-05-03 from receipt…"
-                value={form.notes}
-                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-              />
+              <Label>Notes</Label>
+              <Textarea placeholder="Source, receipt date, verified notes…" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} rows={2} />
             </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button
-                onClick={() => addPrice.mutate()}
-                disabled={addPrice.isPending || !form.product_name || !form.unit_price}
-              >
-                {addPrice.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                Add Price
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
+              <Button onClick={() => addMaterial.mutate()} disabled={addMaterial.isPending || !form.product_name || !form.unit_price}>
+                {addMaterial.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                Add Material
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ─── Assemblies Tab ───────────────────────────────────────────────────────────
+
+function AssemblyCard({ assembly, onEdit }: { assembly: Assembly; onEdit: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const costPerSqft = calcAssemblyCostPerSqft(assembly);
+
+  return (
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <button
+        className="w-full text-left px-5 py-4 flex items-start justify-between gap-4 hover:bg-muted/30 transition-colors"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <h3 className="font-semibold text-foreground leading-snug" style={{ fontFamily: "var(--font-serif)" }}>
+              {assembly.name}
+            </h3>
+            {assembly.quality_tier && (
+              <span className={cn("text-[9px] px-1.5 py-px rounded font-semibold uppercase tracking-wide", QUALITY_COLORS[assembly.quality_tier])}>
+                {assembly.quality_tier}
+              </span>
+            )}
+            {assembly.category?.name && (
+              <span className="text-[10px] text-muted-foreground border border-border/50 rounded px-1.5 py-px">
+                {assembly.category.name}
+              </span>
+            )}
+          </div>
+          {assembly.description && (
+            <p className="text-xs text-muted-foreground leading-relaxed">{assembly.description}</p>
+          )}
+        </div>
+        <div className="text-right shrink-0">
+          <p className="text-lg font-semibold text-foreground leading-none" style={{ fontFamily: "var(--font-mono)" }}>
+            {formatCurrency(costPerSqft)}
+          </p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">material / sq ft</p>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-border">
+          {/* Line items table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/40">
+                <tr>
+                  <th className="text-left px-5 py-2 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Material</th>
+                  <th className="text-right px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Qty/sqft</th>
+                  <th className="text-right px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Unit Cost</th>
+                  <th className="text-right px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Waste</th>
+                  <th className="text-right px-4 py-2 text-[10px] uppercase tracking-wider text-muted-foreground font-medium pr-5">$/sqft</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {assembly.assembly_materials
+                  .sort((a, b) => a.sort_order - b.sort_order)
+                  .map((line) => (
+                    <tr key={line.id} className="hover:bg-muted/20 transition-colors">
+                      <td className="px-5 py-2.5">
+                        <span className="text-foreground font-medium">{line.material_name}</span>
+                        <span className="text-muted-foreground ml-1.5">({line.unit_type})</span>
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-muted-foreground" style={{ fontFamily: "var(--font-mono)" }}>
+                        {line.qty_per_sqft.toFixed(4)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-muted-foreground" style={{ fontFamily: "var(--font-mono)" }}>
+                        {formatCurrency(line.unit_cost)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-muted-foreground">{line.waste_pct}%</td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-foreground pr-5" style={{ fontFamily: "var(--font-mono)" }}>
+                        {formatCurrency(calcLineEffectiveCost(line))}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-muted/30 border-t-2 border-border">
+                  <td colSpan={4} className="px-5 py-2.5 text-xs font-semibold text-foreground">
+                    Total material cost per sq ft
+                  </td>
+                  <td className="px-4 py-2.5 pr-5 text-right font-bold text-foreground text-sm" style={{ fontFamily: "var(--font-mono)" }}>
+                    {formatCurrency(costPerSqft)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* Footer */}
+          <div className="px-5 py-3 flex items-center justify-between border-t border-border bg-muted/20">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Info className="h-3.5 w-3.5 shrink-0" />
+              <span>{assembly.notes ?? "Material cost only. Labour not included."}</span>
+            </div>
+            <Button variant="ghost" size="sm" className="gap-1.5 text-xs h-7" onClick={onEdit}>
+              <Pencil className="h-3 w-3" /> Edit
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AssembliesTab({ suppliers }: { suppliers: Supplier[] }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [addOpen, setAddOpen] = useState(false);
+  const [editAssembly, setEditAssembly] = useState<Assembly | null>(null);
+  const [search, setSearch] = useState("");
+
+  const { data: assemblies, isLoading } = useQuery({
+    queryKey: ["assemblies"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("estimate_assemblies")
+        .select("*, category:cost_categories(name), assembly_materials(*)")
+        .eq("is_active", true)
+        .order("name");
+      return (data ?? []) as Assembly[];
+    },
+  });
+
+  const filtered = (assemblies ?? []).filter((a) =>
+    !search
+    || a.name.toLowerCase().includes(search.toLowerCase())
+    || (a.description ?? "").toLowerCase().includes(search.toLowerCase())
+    || (a.category?.name ?? "").toLowerCase().includes(search.toLowerCase())
+  );
+
+  const isAdmin = user?.role === "admin";
+
+  return (
+    <div className="p-6 max-w-4xl mx-auto">
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <div className="relative max-w-sm flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input className="pl-9" placeholder="Search assemblies…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <p className="text-sm text-muted-foreground shrink-0">{filtered.length} assemblies</p>
+        </div>
+        {isAdmin && (
+          <Button size="sm" className="gap-1.5 shrink-0" onClick={() => setAddOpen(true)}>
+            <Plus className="h-3.5 w-3.5" /> New Assembly
+          </Button>
+        )}
+      </div>
+
+      {/* Info callout */}
+      <div className="flex items-start gap-3 rounded-lg border border-blue-200 dark:border-blue-900/50 bg-blue-50 dark:bg-blue-950/20 px-4 py-3 mb-5">
+        <Calculator className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-px shrink-0" />
+        <p className="text-xs text-blue-700 dark:text-blue-300 leading-relaxed">
+          Assemblies group materials into reusable estimating packages. Each line item calculates a <strong>material cost per sq ft</strong> based on quantity, unit cost, and waste factor. Labour is not included in v1.
+        </p>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
+        </div>
+      ) : filtered.length > 0 ? (
+        <div className="space-y-3">
+          {filtered.map((a) => (
+            <AssemblyCard key={a.id} assembly={a} onEdit={() => setEditAssembly(a)} />
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-16 border border-dashed border-border rounded-xl">
+          <Layers className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+          <p className="text-muted-foreground">No assemblies yet</p>
+          <p className="text-sm text-muted-foreground mt-1">Create assemblies to build reusable sq-ft cost templates.</p>
+        </div>
+      )}
+
+      <AddAssemblyDialog open={addOpen || editAssembly !== null} onOpenChange={(v) => { if (!v) { setAddOpen(false); setEditAssembly(null); } }} assembly={editAssembly} suppliers={suppliers} />
+    </div>
+  );
+}
+
+// ─── Add/Edit Assembly Dialog ────────────────────────────────────────────────
+
+interface AssemblyLineForm {
+  material_name: string;
+  unit_type: string;
+  qty_per_sqft: string;
+  unit_cost: string;
+  waste_pct: string;
+  notes: string;
+}
+
+const EMPTY_LINE: AssemblyLineForm = { material_name: "", unit_type: "each", qty_per_sqft: "1", unit_cost: "0", waste_pct: "10", notes: "" };
+
+function AddAssemblyDialog({
+  open, onOpenChange, assembly, suppliers,
+}: { open: boolean; onOpenChange: (v: boolean) => void; assembly: Assembly | null; suppliers: Supplier[] }) {
+  const qc = useQueryClient();
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [notes, setNotes] = useState("");
+  const [tier, setTier] = useState("mid");
+  const [lines, setLines] = useState<AssemblyLineForm[]>([{ ...EMPTY_LINE }]);
+  const [saving, setSaving] = useState(false);
+
+  // Sync form from existing assembly
+  useState(() => {
+    if (assembly) {
+      setName(assembly.name);
+      setDescription(assembly.description ?? "");
+      setNotes(assembly.notes ?? "");
+      setTier(assembly.quality_tier ?? "mid");
+      if (assembly.assembly_materials.length > 0) {
+        setLines(assembly.assembly_materials.sort((a, b) => a.sort_order - b.sort_order).map((l) => ({
+          material_name: l.material_name,
+          unit_type: l.unit_type,
+          qty_per_sqft: String(l.qty_per_sqft),
+          unit_cost: String(l.unit_cost),
+          waste_pct: String(l.waste_pct),
+          notes: l.notes ?? "",
+        })));
+      }
+    }
+  });
+
+  const previewCostPerSqft = lines.reduce((sum, l) => {
+    return sum + (parseFloat(l.unit_cost) || 0) * (parseFloat(l.qty_per_sqft) || 0) * (1 + (parseFloat(l.waste_pct) || 0) / 100);
+  }, 0);
+
+  const handleSave = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      let assemblyId = assembly?.id;
+      if (!assemblyId) {
+        const { data, error } = await supabase.from("estimate_assemblies").insert({
+          name, description: description || null, notes: notes || null, quality_tier: tier,
+        }).select("id").single();
+        if (error) throw error;
+        assemblyId = data.id;
+      } else {
+        const { error } = await supabase.from("estimate_assemblies").update({
+          name, description: description || null, notes: notes || null, quality_tier: tier, updated_at: new Date().toISOString(),
+        }).eq("id", assemblyId);
+        if (error) throw error;
+        await supabase.from("assembly_materials").delete().eq("assembly_id", assemblyId);
+      }
+      const toInsert = lines
+        .filter((l) => l.material_name.trim())
+        .map((l, idx) => ({
+          assembly_id: assemblyId,
+          material_name: l.material_name,
+          unit_type: l.unit_type,
+          qty_per_sqft: parseFloat(l.qty_per_sqft) || 0,
+          unit_cost: parseFloat(l.unit_cost) || 0,
+          waste_pct: parseFloat(l.waste_pct) || 10,
+          notes: l.notes || null,
+          sort_order: idx,
+        }));
+      if (toInsert.length > 0) {
+        const { error } = await supabase.from("assembly_materials").insert(toInsert);
+        if (error) throw error;
+      }
+      qc.invalidateQueries({ queryKey: ["assemblies"] });
+      toast({ title: assembly ? "Assembly updated" : "Assembly created" });
+      onOpenChange(false);
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+    setSaving(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{assembly ? "Edit Assembly" : "New Assembly"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2 space-y-1.5">
+              <Label>Assembly Name <span className="text-destructive">*</span></Label>
+              <Input placeholder="e.g. 2x6 Exterior Wall" value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Quality Tier</Label>
+              <Select value={tier} onValueChange={setTier}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="basic">Basic</SelectItem>
+                  <SelectItem value="mid">Mid</SelectItem>
+                  <SelectItem value="premium">Premium</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Description</Label>
+            <Input placeholder="Brief description of what this assembly covers…" value={description} onChange={(e) => setDescription(e.target.value)} />
+          </div>
+
+          {/* Line items */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <Label>Material Lines</Label>
+              <span className="text-xs text-muted-foreground">All quantities are per sq ft of assembly area</span>
+            </div>
+            <div className="rounded-lg border border-border overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50 border-b border-border">
+                  <tr>
+                    <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Material</th>
+                    <th className="text-left px-2 py-2 text-[10px] uppercase tracking-wider text-muted-foreground font-medium w-24">Unit</th>
+                    <th className="text-right px-2 py-2 text-[10px] uppercase tracking-wider text-muted-foreground font-medium w-20">Qty/sqft</th>
+                    <th className="text-right px-2 py-2 text-[10px] uppercase tracking-wider text-muted-foreground font-medium w-24">Unit Cost</th>
+                    <th className="text-right px-2 py-2 text-[10px] uppercase tracking-wider text-muted-foreground font-medium w-16">Waste%</th>
+                    <th className="text-right px-2 py-2 text-[10px] uppercase tracking-wider text-muted-foreground font-medium w-20 pr-3">$/sqft</th>
+                    <th className="w-7" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {lines.map((line, idx) => {
+                    const lineCost = (parseFloat(line.unit_cost) || 0) * (parseFloat(line.qty_per_sqft) || 0) * (1 + (parseFloat(line.waste_pct) || 0) / 100);
+                    return (
+                      <tr key={idx}>
+                        <td className="px-3 py-1.5">
+                          <Input
+                            className="h-7 text-xs border-0 bg-transparent px-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                            placeholder="Material name…"
+                            value={line.material_name}
+                            onChange={(e) => setLines((prev) => prev.map((l, i) => i === idx ? { ...l, material_name: e.target.value } : l))}
+                          />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <Select value={line.unit_type} onValueChange={(v) => setLines((prev) => prev.map((l, i) => i === idx ? { ...l, unit_type: v } : l))}>
+                            <SelectTrigger className="h-7 text-xs border-0 bg-transparent"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {UNIT_TYPES.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <Input
+                            className="h-7 text-xs text-right"
+                            type="number" step="0.0001" min="0"
+                            value={line.qty_per_sqft}
+                            onChange={(e) => setLines((prev) => prev.map((l, i) => i === idx ? { ...l, qty_per_sqft: e.target.value } : l))}
+                          />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <div className="relative">
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">$</span>
+                            <Input
+                              className="h-7 text-xs pl-4 text-right"
+                              type="number" step="0.01" min="0"
+                              value={line.unit_cost}
+                              onChange={(e) => setLines((prev) => prev.map((l, i) => i === idx ? { ...l, unit_cost: e.target.value } : l))}
+                            />
+                          </div>
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <div className="flex items-center gap-0.5">
+                            <Input
+                              className="h-7 text-xs text-right"
+                              type="number" step="1" min="0" max="50"
+                              value={line.waste_pct}
+                              onChange={(e) => setLines((prev) => prev.map((l, i) => i === idx ? { ...l, waste_pct: e.target.value } : l))}
+                            />
+                          </div>
+                        </td>
+                        <td className="px-2 py-1.5 text-right pr-3 font-semibold tabular-nums" style={{ fontFamily: "var(--font-mono)" }}>
+                          {formatCurrency(lineCost)}
+                        </td>
+                        <td className="pr-2">
+                          <button
+                            onClick={() => setLines((prev) => prev.filter((_, i) => i !== idx))}
+                            className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-muted/30 border-t border-border">
+                    <td colSpan={5} className="px-3 py-2 text-xs font-semibold text-foreground">
+                      <button
+                        onClick={() => setLines((p) => [...p, { ...EMPTY_LINE }])}
+                        className="flex items-center gap-1.5 text-primary hover:text-primary/80 transition-colors text-xs font-medium"
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Add line
+                      </button>
+                    </td>
+                    <td colSpan={2} className="px-2 py-2 pr-3 text-right">
+                      <span className="text-xs text-muted-foreground">Total: </span>
+                      <span className="font-bold text-sm" style={{ fontFamily: "var(--font-mono)" }}>{formatCurrency(previewCostPerSqft)}<span className="text-xs font-normal text-muted-foreground">/sqft</span></span>
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Notes</Label>
+            <Textarea placeholder="Assumptions, scope boundaries, phase 2 notes…" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving || !name.trim()}>
+              {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              {assembly ? "Save Changes" : "Create Assembly"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Suppliers Tab ────────────────────────────────────────────────────────────
+
+function SuppliersTab({ suppliers, onRefresh }: { suppliers: Supplier[]; onRefresh: () => void }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [addOpen, setAddOpen] = useState(false);
+  const [form, setForm] = useState({
+    name: "", phone: "", email: "", address: "", website: "", notes: "", is_preferred: false,
+  });
+
+  const addSupplier = useMutation({
+    mutationFn: async () => {
+      if (!form.name.trim()) throw new Error("Name required");
+      const { error } = await supabase.from("suppliers").insert({
+        name: form.name,
+        phone: form.phone || null,
+        email: form.email || null,
+        address: form.address || null,
+        website: form.website || null,
+        notes: form.notes || null,
+        is_preferred: form.is_preferred,
+        is_active: true,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Supplier added" });
+      setAddOpen(false);
+      setForm({ name: "", phone: "", email: "", address: "", website: "", notes: "", is_preferred: false });
+      qc.invalidateQueries({ queryKey: ["suppliers-list"] });
+      onRefresh();
+    },
+    onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
+  const isAdmin = user?.role === "admin";
+
+  return (
+    <div className="p-6 max-w-4xl mx-auto">
+      <div className="flex items-center justify-between mb-5">
+        <p className="text-sm text-muted-foreground">{suppliers.length} suppliers configured</p>
+        {isAdmin && (
+          <Button size="sm" className="gap-1.5" onClick={() => setAddOpen(true)}>
+            <Plus className="h-3.5 w-3.5" /> Add Supplier
+          </Button>
+        )}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {suppliers.map((s) => (
+          <div key={s.id} className="rounded-xl border border-border bg-card p-4 space-y-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h3 className="font-semibold text-foreground leading-snug" style={{ fontFamily: "var(--font-serif)" }}>
+                  {s.name}
+                </h3>
+                {s.is_preferred && (
+                  <span className="inline-flex items-center gap-1 text-[9px] uppercase tracking-wider text-amber-600 dark:text-amber-400 font-semibold mt-0.5">
+                    <Star className="h-2.5 w-2.5 fill-current" /> Preferred
+                  </span>
+                )}
+              </div>
+              <Badge variant="outline" className={cn("text-[10px] shrink-0", s.is_active ? "border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-400" : "border-border text-muted-foreground")}>
+                {s.is_active ? "Active" : "Inactive"}
+              </Badge>
+            </div>
+            <div className="space-y-1.5">
+              {s.phone && (
+                <a href={`tel:${s.phone}`} className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                  <Phone className="h-3 w-3 shrink-0" /> {s.phone}
+                </a>
+              )}
+              {s.email && (
+                <a href={`mailto:${s.email}`} className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                  <Mail className="h-3 w-3 shrink-0" /> <span className="truncate">{s.email}</span>
+                </a>
+              )}
+              {s.address && (
+                <div className="flex items-start gap-2 text-xs text-muted-foreground">
+                  <MapPin className="h-3 w-3 shrink-0 mt-px" /> {s.address}
+                </div>
+              )}
+              {s.website && (
+                <a href={s.website} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-xs text-primary hover:underline">
+                  <Globe className="h-3 w-3 shrink-0" /> Website <ExternalLink className="h-2.5 w-2.5" />
+                </a>
+              )}
+            </div>
+            {s.notes && (
+              <p className="text-xs text-muted-foreground border-t border-border pt-2.5 leading-relaxed">{s.notes}</p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Add Supplier Dialog */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Supplier</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <Label>Name <span className="text-destructive">*</span></Label>
+              <Input placeholder="Supplier name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} autoFocus />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Phone</Label>
+                <Input placeholder="(705) 000-0000" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Email</Label>
+                <Input type="email" placeholder="orders@…" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Address</Label>
+              <Input placeholder="City, ON" value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Website</Label>
+              <Input placeholder="https://…" value={form.website} onChange={(e) => setForm((f) => ({ ...f, website: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Textarea placeholder="Contractor discount, delivery lead time…" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} rows={2} />
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch checked={form.is_preferred} onCheckedChange={(v) => setForm((f) => ({ ...f, is_preferred: v }))} />
+              <Label>Mark as preferred supplier</Label>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
+              <Button onClick={() => addSupplier.mutate()} disabled={addSupplier.isPending || !form.name.trim()}>
+                {addSupplier.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                Add Supplier
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
+export default function SupplierPrices() {
+  const { data: suppliers, refetch: refetchSuppliers } = useQuery({
+    queryKey: ["suppliers-list"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("suppliers")
+        .select("id,name,phone,email,address,website,is_preferred,is_active,notes")
+        .eq("is_active", true)
+        .order("is_preferred", { ascending: false });
+      return (data ?? []) as Supplier[];
+    },
+  });
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Page header */}
+      <div className="border-b border-border bg-background px-6 py-5 shrink-0">
+        <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Resources</p>
+        <h1
+          className="text-3xl font-bold text-foreground leading-tight"
+          style={{ fontFamily: "var(--font-serif)", letterSpacing: "-0.025em" }}
+        >
+          Pricing Book
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Internal material pricing, estimating assemblies, and supplier directory
+        </p>
+      </div>
+
+      {/* Tabs */}
+      <Tabs defaultValue="materials" className="flex flex-col flex-1 min-h-0">
+        <div className="border-b border-border bg-background shrink-0 px-6">
+          <TabsList className="h-auto bg-transparent gap-0 p-0 rounded-none">
+            {[
+              { value: "materials", label: "Materials", icon: Package },
+              { value: "assemblies", label: "Assemblies", icon: Layers },
+              { value: "suppliers", label: "Suppliers", icon: Building2 },
+            ].map(({ value, label, icon: Icon }) => (
+              <TabsTrigger
+                key={value}
+                value={value}
+                className="relative h-10 rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 gap-2 text-sm font-medium text-muted-foreground data-[state=active]:text-foreground transition-colors"
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+
+        <TabsContent value="materials" className="flex-1 min-h-0 overflow-hidden mt-0">
+          <MaterialsTab suppliers={suppliers ?? []} />
+        </TabsContent>
+        <TabsContent value="assemblies" className="flex-1 min-h-0 overflow-y-auto mt-0">
+          <AssembliesTab suppliers={suppliers ?? []} />
+        </TabsContent>
+        <TabsContent value="suppliers" className="flex-1 min-h-0 overflow-y-auto mt-0">
+          <SuppliersTab suppliers={suppliers ?? []} onRefresh={() => refetchSuppliers()} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
