@@ -1,0 +1,1 @@
+ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS hero_image_url text;

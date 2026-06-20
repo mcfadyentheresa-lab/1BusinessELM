@@ -1,4 +1,6 @@
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, CheckCircle2, Layers, Calendar, DollarSign, Users, Palette, Sparkles } from "lucide-react";
 
@@ -46,6 +48,16 @@ const PROOF_POINTS = [
 
 export default function LandingPage() {
   const [, navigate] = useLocation();
+
+  const { data: tenantSettings } = useQuery({
+    queryKey: ["tenant-settings"],
+    queryFn: async () => {
+      const { data } = await supabase.from("tenant_settings").select("hero_image_url").maybeSingle();
+      return data;
+    },
+  });
+
+  const heroImageUrl = tenantSettings?.hero_image_url ?? null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -97,11 +109,12 @@ export default function LandingPage() {
       </section>
 
       {/* Hero image band */}
+      {heroImageUrl && (
       <section className="px-6 pb-24">
         <div className="mx-auto max-w-6xl">
           <div className="relative rounded-2xl overflow-hidden" style={{ aspectRatio: "16/7" }}>
             <img
-              src="/Screenshot_2026-06-20_at_5.15.13_PM.png"
+              src={heroImageUrl}
               alt="Muskoka, Ontario"
               className="w-full h-full object-cover"
               style={{ filter: "saturate(0.9) contrast(0.97)" }}
@@ -116,6 +129,7 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+      )}
 
       {/* Features */}
       <section className="px-6 pb-24 border-t border-border">

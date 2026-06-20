@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "@/hooks/use-toast";
-import { Building2, Users, MessageSquare, Zap, Key, Plus, Loader2, Mail, Phone, UserCircle, Trash2, Shield, Copy, Check, Camera } from "lucide-react";
+import { Building2, Users, MessageSquare, Zap, Key, Plus, Loader2, Mail, Phone, UserCircle, Trash2, Shield, Copy, Check, Camera, ImageIcon, X } from "lucide-react";
 
 export default function AdminSettings() {
   const qc = useQueryClient();
@@ -25,7 +25,9 @@ export default function AdminSettings() {
   const [inviteSending, setInviteSending] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [uploadingFor, setUploadingFor] = useState<string | null>(null);
+  const [uploadingHero, setUploadingHero] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const heroInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadUserId = useRef<string | null>(null);
 
   const handleAvatarClick = (userId: string) => {
@@ -60,6 +62,45 @@ export default function AdminSettings() {
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
     }
     setUploadingFor(null);
+  };
+
+  const handleHeroFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Hero image must be under 10 MB.", variant: "destructive" });
+      return;
+    }
+    setUploadingHero(true);
+    try {
+      const ext = file.name.split(".").pop() ?? "jpg";
+      const path = `hero/landing-hero.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("project-assets")
+        .upload(path, file, { upsert: true });
+      if (upErr) throw upErr;
+      const { data: urlData } = supabase.storage.from("project-assets").getPublicUrl(path);
+      const heroUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+      const existing = (await supabase.from("tenant_settings").select("id").maybeSingle()).data?.id;
+      if (existing) {
+        await supabase.from("tenant_settings").update({ hero_image_url: heroUrl }).eq("id", existing);
+      } else {
+        await supabase.from("tenant_settings").insert({ hero_image_url: heroUrl });
+      }
+      qc.invalidateQueries({ queryKey: ["tenant-settings"] });
+      toast({ title: "Hero image updated" });
+    } catch (err: any) {
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+    }
+    setUploadingHero(false);
+  };
+
+  const handleRemoveHero = async () => {
+    if (!tenantSettings?.id) return;
+    await supabase.from("tenant_settings").update({ hero_image_url: null }).eq("id", tenantSettings.id);
+    qc.invalidateQueries({ queryKey: ["tenant-settings"] });
+    toast({ title: "Hero image removed" });
   };
 
   const { data: tenantSettings, isLoading: tenantLoading } = useQuery({
@@ -236,8 +277,67 @@ export default function AdminSettings() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Key className="h-4 w-4" /> Integrations</CardTitle>
-              <CardDescription>API keys are managed as environment secrets via the project settings.</CardDescription>
+              <CardTitle className="flex items-center gap-2"><ImageIcon className="h-4 w-4" /> Home Page Hero Image</CardTitle>
+              <CardDescription>The banner image shown on the public landing page. Recommended: 1600×700px or wider.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <input
+                ref={heroInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleHeroFile}
+              />
+              {tenantSettings?.hero_image_url ? (
+                <div className="relative rounded-xl overflow-hidden border border-border" style={{ aspectRatio: "16/5" }}>
+                  <img
+                    src={tenantSettings.hero_image_url}
+                    alt="Landing hero"
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-end justify-end p-3 gap-2 opacity-0 hover:opacity-100">
+                    <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => heroInputRef.current?.click()}>
+                      <Camera className="h-3.5 w-3.5" /> Replace
+                    </Button>
+                    <Button size="sm" variant="destructive" className="gap-1.5" onClick={handleRemoveHero}>
+                      <X className="h-3.5 w-3.5" /> Remove
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => heroInputRef.current?.click()}
+                  disabled={uploadingHero}
+                  className="w-full rounded-xl border-2 border-dashed border-border flex flex-col items-center justify-center gap-3 py-12 text-muted-foreground hover:border-primary/50 hover:text-foreground transition-colors"
+                >
+                  {uploadingHero ? (
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  ) : (
+                    <ImageIcon className="h-6 w-6" />
+                  )}
+                  <span className="text-sm">{uploadingHero ? "Uploading..." : "Click to upload a hero image"}</span>
+                  <span className="text-xs opacity-60">JPEG, PNG, or WebP — up to 10 MB</span>
+                </button>
+              )}
+              {tenantSettings?.hero_image_url && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => heroInputRef.current?.click()}
+                  disabled={uploadingHero}
+                >
+                  {uploadingHero ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                  {uploadingHero ? "Uploading..." : "Replace image"}
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Key className="h-4 w-4" /> Integrations</CardTitle>              <CardDescription>API keys are managed as environment secrets via the project settings.</CardDescription>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">Contact your system administrator to configure third-party integrations such as SMS or email providers.</p>
