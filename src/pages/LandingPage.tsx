@@ -101,10 +101,10 @@ export default function LandingPage() {
         <div className="mx-auto max-w-6xl">
           <div className="relative rounded-2xl overflow-hidden" style={{ aspectRatio: "16/7" }}>
             <img
-              src="https://images.pexels.com/photos/2132126/pexels-photo-2132126.jpeg?auto=compress&cs=tinysrgb&w=1600"
-              alt="Muskoka lake dock at sunrise"
+              src="/Screenshot_2026-06-20_at_5.15.13_PM.png"
+              alt="Muskoka, Ontario"
               className="w-full h-full object-cover"
-              style={{ filter: "saturate(0.85) contrast(0.96)" }}
+              style={{ filter: "saturate(0.9) contrast(0.97)" }}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
             <div
