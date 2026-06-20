@@ -1,0 +1,159 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ── Core surfaces ─────────────────────────────────────── */
+    /* Off-white with a very faint warm tint */
+    --background: 42 8% 97%;
+    --foreground: 150 18% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 150 18% 10%;
+    --card-border: 150 6% 89%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 150 18% 10%;
+
+    --border: 150 6% 89%;
+    --input: 150 6% 89%;
+    --ring: 150 30% 30%;
+
+    /* ── Brand primaries ───────────────────────────────────── */
+    /* Deep forest green — matches the CTA button in screenshot */
+    --primary: 154 35% 28%;
+    --primary-foreground: 42 25% 96%;
+
+    --secondary: 42 10% 93%;
+    --secondary-foreground: 150 20% 18%;
+
+    --muted: 42 8% 94%;
+    --muted-foreground: 150 8% 46%;
+
+    --accent: 36 55% 50%;
+    --accent-foreground: 42 25% 96%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* ── Charts ────────────────────────────────────────────── */
+    --chart-1: 154 35% 30%;
+    --chart-2: 36 55% 50%;
+    --chart-3: 200 55% 45%;
+    --chart-4: 280 45% 55%;
+    --chart-5: 10 65% 50%;
+
+    /* ── Sidebar ───────────────────────────────────────────── */
+    /* Near-black forest green — matches the dark sidebar in screenshot */
+    --sidebar: 150 22% 11%;
+    --sidebar-foreground: 150 8% 76%;
+    --sidebar-border: 150 18% 17%;
+    --sidebar-ring: 150 30% 45%;
+    --sidebar-primary: 154 35% 32%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 150 20% 17%;
+    --sidebar-accent-foreground: 150 8% 90%;
+
+    /* ── Presence status (rgb) ─────────────────────────────── */
+    --status-online: 34 197 94;
+    --status-away: 234 179 8;
+    --status-busy: 239 68 68;
+    --status-offline: 148 163 184;
+
+    /* ── Typography ────────────────────────────────────────── */
+    --font-sans: "Inter", system-ui, sans-serif;
+    --font-serif: "Inter Tight", Georgia, serif;
+    --font-mono: "Geist Mono", "JetBrains Mono", monospace;
+    --font-hand: "Architects Daughter", cursive;
+  }
+
+  .dark {
+    /* Dark mode — deep, moody, near-black with forest undertones */
+    --background: 150 25% 4%;
+    --foreground: 42 15% 82%;
+
+    --card: 150 22% 7%;
+    --card-foreground: 42 15% 82%;
+    --card-border: 150 18% 12%;
+
+    --popover: 150 22% 6%;
+    --popover-foreground: 42 15% 82%;
+
+    --border: 150 18% 12%;
+    --input: 150 18% 12%;
+    --ring: 154 40% 40%;
+
+    --primary: 154 28% 36%;
+    --primary-foreground: 42 15% 88%;
+
+    --secondary: 150 20% 11%;
+    --secondary-foreground: 42 15% 78%;
+
+    --muted: 150 18% 9%;
+    --muted-foreground: 150 10% 44%;
+
+    --accent: 36 65% 48%;
+    --accent-foreground: 150 25% 4%;
+
+    --destructive: 0 65% 42%;
+    --destructive-foreground: 0 0% 100%;
+
+    --chart-1: 154 28% 40%;
+    --chart-2: 36 65% 52%;
+    --chart-3: 200 58% 50%;
+    --chart-4: 280 48% 60%;
+    --chart-5: 10 68% 54%;
+
+    /* Sidebar — near-black, distinct from background */
+    --sidebar: 150 28% 3%;
+    --sidebar-foreground: 150 8% 65%;
+    --sidebar-border: 150 20% 10%;
+    --sidebar-ring: 154 38% 36%;
+    --sidebar-primary: 154 24% 26%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 150 22% 8%;
+    --sidebar-accent-foreground: 150 8% 72%;
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: var(--font-sans);
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* ── Scrollbar styling ─────────────────────────────────── */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground));
+  }
+}
+
+@layer utilities {
+  .font-hand {
+    font-family: var(--font-hand);
+  }
+  .font-serif {
+    font-family: var(--font-serif);
+  }
+  .font-mono {
+    font-family: var(--font-mono);
+  }
+}
