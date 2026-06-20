@@ -32,8 +32,8 @@ export default function Login() {
       <div className="hidden lg:flex lg:w-[55%] xl:w-[60%] relative overflow-hidden">
         {/* Photo */}
         <img
-          src="https://images.pexels.com/photos/1396122/pexels-photo-1396122.jpeg?auto=compress&cs=tinysrgb&w=1600"
-          alt="Muskoka cottage lakeside"
+          src="https://images.pexels.com/photos/2132126/pexels-photo-2132126.jpeg?auto=compress&cs=tinysrgb&w=1600"
+          alt="Muskoka lake dock"
           className="absolute inset-0 w-full h-full object-cover object-center"
         />
 

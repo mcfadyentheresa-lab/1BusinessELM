@@ -101,8 +101,8 @@ export default function LandingPage() {
         <div className="mx-auto max-w-6xl">
           <div className="relative rounded-2xl overflow-hidden" style={{ aspectRatio: "16/7" }}>
             <img
-              src="https://images.pexels.com/photos/1643383/pexels-photo-1643383.jpeg?auto=compress&cs=tinysrgb&w=1600"
-              alt="Beautiful renovated interior"
+              src="https://images.pexels.com/photos/2132126/pexels-photo-2132126.jpeg?auto=compress&cs=tinysrgb&w=1600"
+              alt="Muskoka lake dock at sunrise"
               className="w-full h-full object-cover"
               style={{ filter: "saturate(0.85) contrast(0.96)" }}
             />
