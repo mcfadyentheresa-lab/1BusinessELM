@@ -87,7 +87,6 @@ function ProjectCard({ project }: { project: Project }) {
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                 style={{
                   objectPosition: `${((project.hero_focal_x ?? 0.5) * 100).toFixed(1)}% ${((project.hero_focal_y ?? 0.5) * 100).toFixed(1)}%`,
-                  filter: "saturate(0.9)",
                 }}
               />
             ) : (
@@ -480,7 +479,6 @@ function ClientDashboard() {
             className="w-full h-full object-cover"
             style={{
               objectPosition: `${((project.hero_focal_x ?? 0.5) * 100).toFixed(1)}% ${((project.hero_focal_y ?? 0.5) * 100).toFixed(1)}%`,
-              filter: "saturate(0.88)",
             }}
           />
         </div>
