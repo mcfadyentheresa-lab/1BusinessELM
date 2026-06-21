@@ -32,10 +32,21 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useToast } from "@/hooks/use-toast";
 import type { CanvasElement } from "@/shared/database.types";
 import { buildBoardDigest, type BoardDigest } from "@/lib/board-digest";
+import { supabase } from "@/lib/supabase";
 
 const PANEL_WIDTH = 480;
 const RAIL_WIDTH = 56;
 const MAX_HISTORY = 30;
+
+const FN_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const { data: { session } } = await supabase.auth.getSession();
+  return {
+    "Content-Type": "application/json",
+    ...(session ? { "Authorization": `Bearer ${session.access_token}` } : {}),
+  };
+}
 
 type Role = "user" | "partner";
 interface ProposedAction {
@@ -266,7 +277,7 @@ function ExpandedPanel(props: ExpandedPanelProps) {
           />
         </TabsContent>
         <TabsContent value="critique" className="flex-1 overflow-hidden flex flex-col mt-3">
-          <CritiqueTab boardId={boardId} projectId={projectId} hasClient={hasClient} />
+          <CritiqueTab boardId={boardId} projectId={projectId} hasClient={hasClient} digest={digest} />
         </TabsContent>
       </Tabs>
     </>
@@ -324,10 +335,9 @@ function ConversationTab(props: ConversationTabProps) {
     }));
 
     try {
-      const res = await fetch("/api/ai/board-prompt", {
+      const res = await fetch(`${FN_BASE}/board-prompt`, {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: await authHeaders(),
         body: JSON.stringify({ ...digest, prompt: text.trim(), messages: wireHistory }),
       });
       if (res.status === 429) {
@@ -578,9 +588,10 @@ interface CritiqueTabProps {
   boardId: number;
   projectId: number;
   hasClient: boolean;
+  digest: BoardDigest;
 }
 
-function CritiqueTab({ boardId, projectId, hasClient }: CritiqueTabProps) {
+function CritiqueTab({ boardId, projectId, hasClient, digest }: CritiqueTabProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [critique, setCritique] = useState("");
@@ -591,11 +602,10 @@ function CritiqueTab({ boardId, projectId, hasClient }: CritiqueTabProps) {
     setLoading(true);
     setCritique("");
     try {
-      const res = await fetch("/api/ai/design-critique", {
+      const res = await fetch(`${FN_BASE}/design-critique`, {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ boardId, focus: "all" }),
+        headers: await authHeaders(),
+        body: JSON.stringify({ boardId, focus: "all", ...digest }),
       });
       if (!res.ok) {
         let detail = "Critique failed";
@@ -619,7 +629,7 @@ function CritiqueTab({ boardId, projectId, hasClient }: CritiqueTabProps) {
     } finally {
       setLoading(false);
     }
-  }, [boardId, toast]);
+  }, [boardId, digest, toast]);
 
   const handleSendToClient = useCallback(async () => {
     if (!hasClient || !critique.trim() || sending) return;
