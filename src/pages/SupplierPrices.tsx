@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/use-auth";
@@ -18,7 +18,7 @@ import {
   Search, Plus, Package, ExternalLink, Loader2, Download,
   ChevronDown, Phone, Mail, MapPin, Globe, Star, Layers,
   Pencil, Trash2, Copy, Calculator, Building2, ChevronRight,
-  Info,
+  Info, Receipt, UploadCloud, CheckCircle2, AlertCircle, X,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -177,6 +177,339 @@ function SupplierInfoPanel({ supplier }: { supplier: Supplier }) {
   );
 }
 
+// ─── Receipt Scan Dialog ──────────────────────────────────────────────────────
+
+interface ParsedReceiptItem {
+  product_name: string;
+  product_code: string | null;
+  unit_price: number;
+  unit_type: string;
+  supplier_name: string | null;
+  notes: string | null;
+  // UI state
+  _include: boolean;
+  _matchId: number | null; // existing material id to update
+}
+
+function ReceiptScanDialog({
+  open, onOpenChange, suppliers, existingMaterials, onDone,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  suppliers: Supplier[];
+  existingMaterials: Material[];
+  onDone: () => void;
+}) {
+  const [step, setStep] = useState<"upload" | "processing" | "review">("upload");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [items, setItems] = useState<ParsedReceiptItem[]>([]);
+  const [applying, setApplying] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const reset = () => {
+    setStep("upload");
+    setPreviewUrl(null);
+    setItems([]);
+    setApplying(false);
+  };
+
+  const handleClose = (v: boolean) => {
+    if (!v) reset();
+    onOpenChange(v);
+  };
+
+  const processFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Images only", description: "Please upload a JPEG, PNG, or WebP receipt.", variant: "destructive" });
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      toast({ title: "Too large", description: "Image must be under 15 MB.", variant: "destructive" });
+      return;
+    }
+
+    const preview = URL.createObjectURL(file);
+    setPreviewUrl(preview);
+    setStep("processing");
+
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const { data, error } = await supabase.functions.invoke("parse-receipt", {
+        body: { imageBase64: base64, mimeType: file.type },
+      });
+      if (error) throw error;
+      const json = data;
+
+      const parsed: ParsedReceiptItem[] = (json.items ?? []).map((item: any) => {
+        const nameLower = (item.product_name ?? "").toLowerCase();
+        const match = existingMaterials.find(
+          (m) => m.product_name.toLowerCase() === nameLower
+            || (item.product_code && m.product_code?.toLowerCase() === item.product_code.toLowerCase())
+        );
+        return {
+          product_name: item.product_name ?? "",
+          product_code: item.product_code ?? null,
+          unit_price: parseFloat(item.unit_price) || 0,
+          unit_type: item.unit_type ?? "each",
+          supplier_name: item.supplier_name ?? null,
+          notes: item.notes ?? null,
+          _include: true,
+          _matchId: match?.id ?? null,
+        };
+      });
+
+      setItems(parsed);
+      setStep("review");
+    } catch (e: any) {
+      toast({ title: "Failed to parse receipt", description: e.message, variant: "destructive" });
+      setStep("upload");
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) processFile(file);
+  };
+
+  const handleApply = async () => {
+    const selected = items.filter((i) => i._include);
+    if (!selected.length) return;
+    setApplying(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const resolveSupplier = (name: string | null): number | null => {
+        if (!name) return null;
+        const match = suppliers.find((s) => s.name.toLowerCase() === name.toLowerCase());
+        return match?.id ?? null;
+      };
+
+      for (const item of selected) {
+        const supplierId = resolveSupplier(item.supplier_name);
+        if (item._matchId) {
+          // Update existing
+          await supabase.from("supplier_prices").update({
+            unit_price: String(item.unit_price),
+            unit_type: item.unit_type,
+            ...(item.product_code ? { product_code: item.product_code } : {}),
+            ...(supplierId ? { supplier_id: supplierId } : {}),
+            ...(item.notes ? { notes: item.notes } : {}),
+            last_updated: today,
+          }).eq("id", item._matchId);
+          // Log history
+          await supabase.from("material_price_history").insert({
+            material_id: item._matchId,
+            unit_price: String(item.unit_price),
+            notes: `Receipt scan — ${today}`,
+          });
+        } else {
+          // Insert new
+          await supabase.from("supplier_prices").insert({
+            product_name: item.product_name,
+            product_code: item.product_code || null,
+            unit_price: String(item.unit_price),
+            unit_type: item.unit_type,
+            supplier_id: supplierId,
+            notes: item.notes || null,
+            last_updated: today,
+          });
+        }
+      }
+      toast({ title: `${selected.length} item${selected.length > 1 ? "s" : ""} updated` });
+      onDone();
+      handleClose(false);
+    } catch (e: any) {
+      toast({ title: "Failed to apply changes", description: e.message, variant: "destructive" });
+    }
+    setApplying(false);
+  };
+
+  const includedCount = items.filter((i) => i._include).length;
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Receipt className="h-4 w-4 text-primary" />
+            Scan Receipt
+          </DialogTitle>
+        </DialogHeader>
+
+        {step === "upload" && (
+          <div className="space-y-4 pt-2">
+            <p className="text-sm text-muted-foreground">
+              Upload a photo or scan of a supplier receipt or invoice. AI will extract product names, codes, and prices.
+            </p>
+            <input
+              ref={inputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) processFile(f); e.target.value = ""; }}
+            />
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              onDrop={handleDrop}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              className={cn(
+                "w-full rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-3 py-14 transition-colors",
+                dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/40 hover:bg-muted/30"
+              )}
+            >
+              <UploadCloud className="h-8 w-8 text-muted-foreground" />
+              <div className="text-center">
+                <p className="text-sm font-medium text-foreground">Drop a receipt image here</p>
+                <p className="text-xs text-muted-foreground mt-1">or click to browse — JPEG, PNG, WebP up to 15 MB</p>
+              </div>
+            </button>
+          </div>
+        )}
+
+        {step === "processing" && (
+          <div className="flex flex-col items-center justify-center py-16 gap-4">
+            {previewUrl && (
+              <div className="w-32 h-32 rounded-xl overflow-hidden border border-border shadow-sm">
+                <img src={previewUrl} alt="Receipt" className="w-full h-full object-cover" />
+              </div>
+            )}
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span className="text-sm">AI is reading the receipt…</span>
+            </div>
+          </div>
+        )}
+
+        {step === "review" && (
+          <>
+            <div className="flex items-center gap-3 mb-3">
+              {previewUrl && (
+                <div className="w-14 h-14 rounded-lg overflow-hidden border border-border shrink-0">
+                  <img src={previewUrl} alt="Receipt" className="w-full h-full object-cover" />
+                </div>
+              )}
+              <div>
+                <p className="text-sm font-medium text-foreground">{items.length} line items found</p>
+                <p className="text-xs text-muted-foreground">
+                  {items.filter((i) => i._matchId).length} match existing materials and will be updated.{" "}
+                  {items.filter((i) => !i._matchId).length} are new.
+                </p>
+              </div>
+              <button
+                onClick={() => { setStep("upload"); setPreviewUrl(null); }}
+                className="ml-auto text-muted-foreground hover:text-foreground p-1 rounded"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto min-h-0 rounded-xl border border-border">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50 border-b border-border sticky top-0">
+                  <tr>
+                    <th className="w-8 px-3 py-2.5" />
+                    <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Product</th>
+                    <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-wider text-muted-foreground font-medium w-28">Unit Price</th>
+                    <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-wider text-muted-foreground font-medium w-28">Unit</th>
+                    <th className="text-left px-3 py-2.5 text-[10px] uppercase tracking-wider text-muted-foreground font-medium w-20">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {items.map((item, idx) => (
+                    <tr key={idx} className={cn("transition-colors", item._include ? "bg-background hover:bg-muted/20" : "bg-muted/30 opacity-50")}>
+                      <td className="px-3 py-2.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={item._include}
+                          onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, _include: e.target.checked } : it))}
+                          className="accent-primary"
+                        />
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <input
+                          className="w-full bg-transparent border-0 text-foreground font-medium focus:outline-none focus:ring-1 focus:ring-primary rounded px-1 -mx-1"
+                          value={item.product_name}
+                          onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, product_name: e.target.value } : it))}
+                        />
+                        {item.product_code && (
+                          <span className="text-muted-foreground block mt-0.5" style={{ fontFamily: "var(--font-mono)" }}>
+                            {item.product_code}
+                          </span>
+                        )}
+                        {item.supplier_name && (
+                          <span className="text-muted-foreground/70">{item.supplier_name}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="relative">
+                          <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            className="w-full bg-muted/40 border border-border rounded px-2 pl-5 py-1 text-right text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                            value={item.unit_price}
+                            onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, unit_price: parseFloat(e.target.value) || 0 } : it))}
+                          />
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <Select
+                          value={item.unit_type}
+                          onValueChange={(v) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, unit_type: v } : it))}
+                        >
+                          <SelectTrigger className="h-7 text-xs border-border bg-muted/40"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {UNIT_TYPES.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {item._matchId ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">
+                            <CheckCircle2 className="h-2.5 w-2.5" /> Update
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-1.5 py-0.5 rounded">
+                            <Plus className="h-2.5 w-2.5" /> New
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-border mt-2">
+              <p className="text-xs text-muted-foreground">
+                {includedCount} of {items.length} items selected
+              </p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => handleClose(false)}>Cancel</Button>
+                <Button size="sm" className="gap-2" onClick={handleApply} disabled={applying || includedCount === 0}>
+                  {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
+                  Apply {includedCount > 0 ? `${includedCount} item${includedCount > 1 ? "s" : ""}` : ""}
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Materials Tab ───────────────────────────────────────────────────────────
 
 function MaterialsTab({
@@ -189,6 +522,7 @@ function MaterialsTab({
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [expandedNotes, setExpandedNotes] = useState<Set<number>>(new Set());
   const [addOpen, setAddOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   const [form, setForm] = useState({
     product_name: "", product_code: "", supplier_id: "",
     unit_price: "", unit_type: "each", coverage_value: "",
@@ -335,6 +669,9 @@ function MaterialsTab({
               <div className="flex gap-2 shrink-0">
                 <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExportCSV} disabled={!prices?.length}>
                   <Download className="h-3.5 w-3.5" /> Export
+                </Button>
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setScanOpen(true)}>
+                  <Receipt className="h-3.5 w-3.5" /> Scan Receipt
                 </Button>
                 <Button size="sm" className="gap-1.5" onClick={() => setAddOpen(true)}>
                   <Plus className="h-3.5 w-3.5" /> Add Material
@@ -597,6 +934,14 @@ function MaterialsTab({
           </div>
         </DialogContent>
       </Dialog>
+
+      <ReceiptScanDialog
+        open={scanOpen}
+        onOpenChange={setScanOpen}
+        suppliers={suppliers}
+        existingMaterials={prices ?? []}
+        onDone={() => qc.invalidateQueries({ queryKey: ["supplier-prices"] })}
+      />
     </div>
   );
 }
