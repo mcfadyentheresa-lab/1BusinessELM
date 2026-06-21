@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+const ANTHROPIC_API_KEY = Deno.env.get("OPENAI_API_KEY");
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -35,36 +35,41 @@ ACTION_ADD_NOTE: [the exact text for the note]
 
 Keep responses concise—2-4 sentences unless more detail is clearly needed. Be specific about what's on the board.`;
 
-    const openaiMessages = [
-      { role: "system", content: systemPrompt },
-      ...(Array.isArray(messages) ? messages.slice(-20) : []),
+    // Build Anthropic-format messages (no system role in array)
+    const priorMessages = Array.isArray(messages) ? messages.slice(-20) : [];
+    const anthropicMessages = [
+      ...priorMessages.map((m: { role: string; content: string }) => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content,
+      })),
       { role: "user", content: prompt.trim() },
     ];
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+        "x-api-key": ANTHROPIC_API_KEY!,
+        "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: openaiMessages,
+        model: "claude-haiku-4-5",
+        system: systemPrompt,
+        messages: anthropicMessages,
         max_tokens: 600,
-        temperature: 0.7,
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      return new Response(JSON.stringify({ error: `OpenAI error: ${errText}` }), {
+      return new Response(JSON.stringify({ error: `API error: ${errText}` }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const data = await response.json();
-    const rawText: string = data.choices?.[0]?.message?.content ?? "";
+    const rawText: string = data.content?.[0]?.text ?? "";
 
     // Parse ACTION_ADD_NOTE commands out of the response
     const actions: Array<{ kind: "add_note"; text: string }> = [];

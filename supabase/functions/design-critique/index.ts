@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+const ANTHROPIC_API_KEY = Deno.env.get("OPENAI_API_KEY");
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -25,33 +25,31 @@ Deno.serve(async (req: Request) => {
       ? `Please give me a full read of this board:\n\n${boardContext}`
       : `Please critique the ${focus} aspect of this board:\n\n${boardContext}`;
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+        "x-api-key": ANTHROPIC_API_KEY!,
+        "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
+        model: "claude-haiku-4-5",
+        system: systemPrompt,
+        messages: [{ role: "user", content: userPrompt }],
         max_tokens: 800,
-        temperature: 0.6,
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      return new Response(JSON.stringify({ error: `OpenAI error: ${errText}` }), {
+      return new Response(JSON.stringify({ error: `API error: ${errText}` }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const data = await response.json();
-    const critique: string = data.choices?.[0]?.message?.content ?? "";
+    const critique: string = data.content?.[0]?.text ?? "";
 
     return new Response(
       JSON.stringify({ critique, generatedAt: new Date().toISOString() }),
