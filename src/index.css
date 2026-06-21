@@ -69,51 +69,53 @@
   }
 
   .dark {
-    /* Dark mode — deep, moody, near-black with forest undertones */
-    --background: 150 25% 4%;
-    --foreground: 42 15% 82%;
+    /* Deep slate-green — rich and atmospheric, not flat black */
+    --background: 162 18% 8%;
+    --foreground: 42 22% 90%;
 
-    --card: 150 22% 7%;
-    --card-foreground: 42 15% 82%;
-    --card-border: 150 18% 12%;
+    --card: 162 16% 11%;
+    --card-foreground: 42 22% 90%;
+    --card-border: 162 14% 17%;
 
-    --popover: 150 22% 6%;
-    --popover-foreground: 42 15% 82%;
+    --popover: 162 16% 10%;
+    --popover-foreground: 42 22% 90%;
 
-    --border: 150 18% 12%;
-    --input: 150 18% 12%;
-    --ring: 154 40% 40%;
+    --border: 162 14% 17%;
+    --input: 162 14% 15%;
+    --ring: 154 52% 44%;
 
-    --primary: 154 28% 36%;
-    --primary-foreground: 42 15% 88%;
+    /* Vibrant forest green — the brand colour should read clearly */
+    --primary: 154 52% 40%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 150 20% 11%;
-    --secondary-foreground: 42 15% 78%;
+    --secondary: 162 16% 15%;
+    --secondary-foreground: 42 18% 80%;
 
-    --muted: 150 18% 9%;
-    --muted-foreground: 150 10% 44%;
+    --muted: 162 14% 13%;
+    --muted-foreground: 150 10% 56%;
 
-    --accent: 36 65% 48%;
-    --accent-foreground: 150 25% 4%;
+    /* Warm amber accent — stays punchy against dark */
+    --accent: 36 70% 52%;
+    --accent-foreground: 30 30% 8%;
 
-    --destructive: 0 65% 42%;
+    --destructive: 0 68% 48%;
     --destructive-foreground: 0 0% 100%;
 
-    --chart-1: 154 28% 40%;
-    --chart-2: 36 65% 52%;
-    --chart-3: 200 58% 50%;
-    --chart-4: 280 48% 60%;
-    --chart-5: 10 68% 54%;
+    --chart-1: 154 52% 42%;
+    --chart-2: 36 70% 54%;
+    --chart-3: 200 58% 52%;
+    --chart-4: 280 48% 62%;
+    --chart-5: 10 68% 56%;
 
-    /* Sidebar — near-black, distinct from background */
-    --sidebar: 150 28% 3%;
-    --sidebar-foreground: 150 8% 65%;
-    --sidebar-border: 150 20% 10%;
-    --sidebar-ring: 154 38% 36%;
-    --sidebar-primary: 154 24% 26%;
+    /* Sidebar — deep forest, clearly distinct from main canvas */
+    --sidebar: 158 24% 6%;
+    --sidebar-foreground: 150 10% 70%;
+    --sidebar-border: 158 18% 13%;
+    --sidebar-ring: 154 48% 38%;
+    --sidebar-primary: 154 48% 34%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 150 22% 8%;
-    --sidebar-accent-foreground: 150 8% 72%;
+    --sidebar-accent: 158 20% 11%;
+    --sidebar-accent-foreground: 150 10% 82%;
   }
 
   * {
