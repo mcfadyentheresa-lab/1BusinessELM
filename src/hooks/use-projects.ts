@@ -442,6 +442,31 @@ export function useRemoveProjectCover() {
   });
 }
 
+export function useUpdateFocalPoint() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      projectId,
+      focalX,
+      focalY,
+    }: {
+      projectId: number;
+      focalX: number;
+      focalY: number;
+    }) => {
+      const { error } = await supabase
+        .from("projects")
+        .update({ hero_focal_x: focalX, hero_focal_y: focalY })
+        .eq("id", projectId);
+      if (error) throw error;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["project", vars.projectId] });
+    },
+  });
+}
+
 // ── Board Snapshots ────────────────────────────────────────────────────────
 
 export interface BoardSnapshot {

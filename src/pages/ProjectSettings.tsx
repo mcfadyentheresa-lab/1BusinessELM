@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
@@ -10,8 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
-import { Loader2, Save, Camera, X, ImageIcon } from "lucide-react";
-import { useUpdateProjectCover, useRemoveProjectCover } from "@/hooks/use-projects";
+import { Loader2, Save, Camera, X, ImageIcon, Crosshair, Check } from "lucide-react";
+import { useUpdateProjectCover, useRemoveProjectCover, useUpdateFocalPoint } from "@/hooks/use-projects";
 
 export default function ProjectSettings() {
   const { id } = useParams<{ id: string }>();
@@ -29,6 +29,54 @@ export default function ProjectSettings() {
 
   const updateCover = useUpdateProjectCover();
   const removeCover = useRemoveProjectCover();
+  const updateFocal = useUpdateFocalPoint();
+
+  // Focal point picker state
+  const [adjusting, setAdjusting] = useState(false);
+  const [focal, setFocal] = useState({ x: 0.5, y: 0.5 });
+  const imgContainerRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+
+  useEffect(() => {
+    if (project) {
+      setFocal({ x: project.hero_focal_x ?? 0.5, y: project.hero_focal_y ?? 0.5 });
+    }
+  }, [project]);
+
+  const computeFocal = useCallback((e: React.PointerEvent | PointerEvent) => {
+    const el = imgContainerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+    setFocal({ x, y });
+    return { x, y };
+  }, []);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    if (!adjusting) return;
+    e.preventDefault();
+    isDragging.current = true;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    computeFocal(e);
+  }, [adjusting, computeFocal]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!isDragging.current) return;
+    e.preventDefault();
+    computeFocal(e);
+  }, [computeFocal]);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    if (!isDragging.current) return;
+    isDragging.current = false;
+    const result = computeFocal(e);
+    if (!result) return;
+    updateFocal.mutate(
+      { projectId, focalX: result.x, focalY: result.y },
+      { onError: (err: any) => toast({ title: "Could not save focal point", description: err.message, variant: "destructive" }) },
+    );
+  }, [computeFocal, projectId, updateFocal]);
 
   const [form, setForm] = useState({
     name: "",
@@ -119,20 +167,80 @@ export default function ProjectSettings() {
             }}
           />
           {project?.thumbnail_url ? (
-            <div className="relative group rounded-lg overflow-hidden border border-border" style={{ aspectRatio: "16/7" }}>
-              <img
-                src={project.thumbnail_url}
-                alt="Cover"
-                className="w-full h-full object-cover"
+            <div className="space-y-2">
+              {/* Image with focal point dot */}
+              <div
+                ref={imgContainerRef}
+                className="relative rounded-lg overflow-hidden border border-border select-none"
                 style={{
-                  objectPosition: `${((project.hero_focal_x ?? 0.5) * 100).toFixed(1)}% ${((project.hero_focal_y ?? 0.5) * 100).toFixed(1)}%`,
+                  aspectRatio: "16/7",
+                  cursor: adjusting ? "crosshair" : "default",
+                  touchAction: adjusting ? "none" : "auto",
                 }}
-              />
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100">
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+              >
+                <img
+                  src={project.thumbnail_url}
+                  alt="Cover"
+                  draggable={false}
+                  className="w-full h-full object-cover pointer-events-none"
+                  style={{
+                    objectPosition: `${(focal.x * 100).toFixed(1)}% ${(focal.y * 100).toFixed(1)}%`,
+                  }}
+                />
+                {/* Focal point dot */}
+                {adjusting && (
+                  <>
+                    <div className="absolute inset-0 bg-black/20 pointer-events-none" />
+                    <div
+                      className="absolute pointer-events-none"
+                      style={{
+                        left: `${focal.x * 100}%`,
+                        top: `${focal.y * 100}%`,
+                        transform: "translate(-50%, -50%)",
+                      }}
+                    >
+                      {/* Outer ring */}
+                      <div className="w-8 h-8 rounded-full border-2 border-white shadow-lg flex items-center justify-center bg-black/20">
+                        <div className="w-2 h-2 rounded-full bg-white shadow" />
+                      </div>
+                    </div>
+                    <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs px-3 py-1 rounded-full pointer-events-none whitespace-nowrap">
+                      Drag to reposition focal point
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Action row */}
+              <div className="flex items-center gap-2">
+                {adjusting ? (
+                  <Button
+                    size="sm"
+                    variant="default"
+                    className="gap-1.5"
+                    onClick={() => setAdjusting(false)}
+                  >
+                    {updateFocal.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                    Done
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5"
+                    onClick={() => setAdjusting(true)}
+                  >
+                    <Crosshair className="h-3.5 w-3.5" />
+                    Adjust focal point
+                  </Button>
+                )}
                 <Button
                   size="sm"
-                  variant="secondary"
-                  className="gap-1.5 shadow"
+                  variant="outline"
+                  className="gap-1.5"
                   onClick={() => coverInputRef.current?.click()}
                   disabled={updateCover.isPending}
                 >
@@ -141,13 +249,13 @@ export default function ProjectSettings() {
                 </Button>
                 <Button
                   size="sm"
-                  variant="destructive"
-                  className="gap-1.5 shadow"
+                  variant="ghost"
+                  className="gap-1.5 text-destructive hover:text-destructive ml-auto"
                   onClick={() =>
                     removeCover.mutate(
                       { projectId },
                       {
-                        onSuccess: () => toast({ title: "Cover image removed" }),
+                        onSuccess: () => { toast({ title: "Cover image removed" }); setAdjusting(false); },
                         onError: (err: any) =>
                           toast({ title: "Error", description: err.message, variant: "destructive" }),
                       }
