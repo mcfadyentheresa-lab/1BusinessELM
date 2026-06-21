@@ -153,18 +153,25 @@ export default function Login() {
           {/* Divider */}
           <div className="flex items-center gap-3 my-6">
             <div className="flex-1 h-px bg-border" />
-            <span className="text-[10px] text-muted-foreground uppercase tracking-widest">access</span>
+            <span className="text-[10px] text-muted-foreground uppercase tracking-widest">or</span>
             <div className="flex-1 h-px bg-border" />
           </div>
 
-          <p className="text-center text-xs text-muted-foreground leading-relaxed">
-            This portal is invite-only.{" "}
-            <a
-              href="mailto:info@asterandspruceliving.ca"
-              className="text-foreground font-medium hover:underline underline-offset-2"
-            >
-              Request access
-            </a>
+          {/* Demo access */}
+          <button
+            type="button"
+            onClick={() => {
+              setEmail("admin@elm.studio");
+              setPassword("demo1234");
+            }}
+            className="w-full h-11 rounded-md border border-border bg-muted/40 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors flex items-center justify-center gap-2"
+          >
+            <span className="text-xs uppercase tracking-[0.15em] font-medium" style={{ fontFamily: "var(--font-mono)" }}>
+              Fill demo credentials
+            </span>
+          </button>
+          <p className="text-center text-[11px] text-muted-foreground/60 mt-2">
+            admin@elm.studio · demo1234
           </p>
         </div>
 
