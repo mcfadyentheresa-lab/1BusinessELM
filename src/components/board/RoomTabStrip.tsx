@@ -142,17 +142,17 @@ export function RoomTabStrip({
   const counts = activeRoom !== undefined ? countByStatus(elements, activeRoom) : null;
 
   return (
-    <div className="flex flex-col gap-0 border-b border-border bg-background/95 backdrop-blur-sm">
-      {/* Room tabs row */}
-      <div className="flex items-center gap-0.5 px-2 pt-2 overflow-x-auto scrollbar-none">
+    <div className="flex items-center border-b border-border bg-background/95 backdrop-blur-sm min-h-[40px]">
+      {/* Room tabs — scrollable, grows to fill available space */}
+      <div className="flex items-center gap-0.5 px-2 py-1 overflow-x-auto scrollbar-none flex-1 min-w-0">
         {/* All rooms tab */}
         <button
           type="button"
           onClick={() => onRoomChange(null)}
-          className={`shrink-0 px-3 h-8 rounded-t-md text-xs font-medium transition-colors border-b-2 ${
+          className={`shrink-0 px-3 h-7 rounded-md text-xs font-medium transition-colors ${
             activeRoom === null
-              ? "border-primary text-foreground bg-background"
-              : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted"
+              ? "bg-primary/10 text-primary"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted"
           }`}
         >
           All rooms
@@ -170,7 +170,7 @@ export function RoomTabStrip({
                   if (e.key === "Escape") { setEditingRoom(null); setEditName(""); }
                 }}
                 onBlur={confirmRename}
-                className="h-7 text-xs w-28 rounded-t-md rounded-b-none"
+                className="h-7 text-xs w-28 rounded-md"
               />
             </div>
           ) : (
@@ -181,17 +181,17 @@ export function RoomTabStrip({
               onDragOver={(e) => handleDragOver(room, e)}
               onDrop={() => handleDrop(room)}
               onDragLeave={() => setDragOver(null)}
-              className={`group shrink-0 flex items-center gap-1 px-2.5 h-8 rounded-t-md text-xs font-medium cursor-pointer transition-colors border-b-2 ${
+              className={`group shrink-0 flex items-center gap-1 px-2.5 h-7 rounded-md text-xs font-medium cursor-pointer transition-colors ${
                 activeRoom === room
-                  ? "border-primary text-foreground bg-background"
-                  : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted"
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
               } ${dragOver === room ? "bg-primary/10" : ""}`}
               onClick={() => onRoomChange(room)}
             >
               <GripHorizontal className="h-2.5 w-2.5 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />
               <span>{room}</span>
               {counts && (
-                <span className={`text-[10px] px-1 rounded-full ${activeRoom === room ? "bg-primary/15 text-primary" : "bg-muted"}`}>
+                <span className={`text-[10px] px-1 rounded-full ${activeRoom === room ? "bg-primary/20 text-primary" : "bg-muted"}`}>
                   {Object.values(counts).reduce((a, b) => a + b, 0)}
                 </span>
               )}
@@ -254,7 +254,7 @@ export function RoomTabStrip({
               <button
                 type="button"
                 onClick={() => setAddingRoom(true)}
-                className="shrink-0 h-8 w-8 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors ml-0.5"
+                className="shrink-0 h-7 w-7 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors ml-0.5"
                 aria-label="Add room"
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -265,47 +265,42 @@ export function RoomTabStrip({
         )}
       </div>
 
-      {/* Status filter + budget row */}
-      <div className="flex items-center justify-between px-3 py-1.5 gap-3">
-        <div className="flex items-center gap-1">
+      {/* Status filters + budget — fixed width, never scrolls */}
+      <div className="flex items-center gap-1 px-2 py-1 shrink-0 border-l border-border/60">
+        <button
+          type="button"
+          onClick={() => onStatusChange(null)}
+          className={`h-5 px-2 rounded-full text-[10px] font-medium transition-colors ${
+            activeStatus === null
+              ? "bg-foreground text-background"
+              : "bg-muted text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          All
+        </button>
+        {ROOM_STATUSES.map((s) => (
           <button
+            key={s}
             type="button"
-            onClick={() => onStatusChange(null)}
+            onClick={() => onStatusChange(activeStatus === s ? null : s)}
             className={`h-5 px-2 rounded-full text-[10px] font-medium transition-colors ${
-              activeStatus === null
-                ? "bg-foreground text-background"
+              activeStatus === s
+                ? STATUS_COLORS[s]
                 : "bg-muted text-muted-foreground hover:text-foreground"
             }`}
           >
-            All
+            {STATUS_LABELS[s]}
+            {counts && <span className="ml-1 opacity-60">{counts[s]}</span>}
           </button>
-          {ROOM_STATUSES.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => onStatusChange(activeStatus === s ? null : s)}
-              className={`h-5 px-2 rounded-full text-[10px] font-medium transition-colors ${
-                activeStatus === s
-                  ? STATUS_COLORS[s]
-                  : "bg-muted text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {STATUS_LABELS[s]}
-              {counts && <span className="ml-1 opacity-60">{counts[s]}</span>}
-            </button>
-          ))}
-        </div>
+        ))}
 
         {budget && budget.total > 0 && (
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1 ml-1 pl-2 border-l border-border/60 shrink-0">
             <DollarSign className="h-3 w-3 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">
+            <span className="text-[11px] text-muted-foreground whitespace-nowrap">
               {formatCad(budget.total)}
               {budget.selected > 0 && (
-                <span className="text-amber-600 ml-1">({formatCad(budget.selected)} selected)</span>
-              )}
-              {budget.hasMixedCurrency && (
-                <span className="text-[10px] ml-1 text-muted-foreground/60">mixed currency</span>
+                <span className="text-amber-600 ml-1">({formatCad(budget.selected)})</span>
               )}
             </span>
           </div>

@@ -53,6 +53,7 @@ interface ChatTurn {
 
 interface PartnerPanelProps {
   open: boolean;
+  onOpen?: () => void;
   onClose: () => void;
   projectId: number;
   boardId: number;
@@ -94,6 +95,7 @@ function generateId(): string {
 
 export default function AIPartnerPanel({
   open,
+  onOpen,
   onClose,
   projectId,
   boardId,
@@ -123,13 +125,17 @@ export default function AIPartnerPanel({
 
   const digest = useMemo<BoardDigest>(() => buildBoardDigest(boardId, elements), [boardId, elements]);
 
-  if (!open) return null;
+  const isExpanded = open && !collapsed;
+  const width = isExpanded ? PANEL_WIDTH : RAIL_WIDTH;
 
-  const width = collapsed ? RAIL_WIDTH : PANEL_WIDTH;
+  const handleRailClick = () => {
+    if (!open) onOpen?.();
+    setCollapsed(false);
+  };
 
   return (
     <aside
-      className="fixed top-0 right-0 z-[115] h-full bg-card border-l border-border shadow-2xl flex flex-col ai-partner-enter"
+      className="fixed top-0 right-0 z-[115] h-full bg-card border-l border-border shadow-lg flex flex-col"
       style={{ width: `min(100vw, ${width}px)`, transition: "width 220ms ease" }}
       role="complementary"
       aria-label="AI co-designer"
@@ -137,8 +143,8 @@ export default function AIPartnerPanel({
     >
       <style dangerouslySetInnerHTML={{ __html: PANEL_STYLES }} />
 
-      {collapsed ? (
-        <CollapsedRail onExpand={() => setCollapsed(false)} hasNew={turns.length > 0} />
+      {!isExpanded ? (
+        <CollapsedRail onExpand={handleRailClick} hasNew={turns.length > 0} isOpen={open} />
       ) : (
         <ExpandedPanel
           tab={tab}
@@ -158,18 +164,20 @@ export default function AIPartnerPanel({
   );
 }
 
-function CollapsedRail({ onExpand, hasNew }: { onExpand: () => void; hasNew: boolean }) {
+function CollapsedRail({ onExpand, hasNew, isOpen }: { onExpand: () => void; hasNew: boolean; isOpen: boolean }) {
   return (
     <button
       onClick={onExpand}
       className="flex flex-col items-center justify-start pt-4 gap-3 w-full h-full hover:bg-muted/40 transition-colors"
       style={{ minWidth: RAIL_WIDTH, minHeight: 44 }}
-      aria-label="Expand co-designer"
+      aria-label={isOpen ? "Expand co-designer" : "Open co-designer"}
       data-testid="ai-partner-expand"
     >
       <div className="relative">
         <Sparkles className="h-5 w-5 text-primary" />
-        {hasNew && <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-primary animate-pulse" />}
+        {(hasNew || !isOpen) && (
+          <span className={`absolute -top-1 -right-1 h-2 w-2 rounded-full ${!isOpen ? "bg-primary/50" : "bg-primary animate-pulse"}`} />
+        )}
       </div>
       <ChevronLeft className="h-4 w-4 text-muted-foreground" />
     </button>

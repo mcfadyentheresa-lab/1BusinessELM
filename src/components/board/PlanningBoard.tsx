@@ -6793,9 +6793,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
             </SelectContent>
           </Select>
         )}
-        <Button variant="ghost" size="sm" className="h-8 hover:bg-primary/10 hover:text-primary" onClick={() => { setNewBoardName(""); setShowNewBoardDialog(true); }} data-testid="button-new-board">
-          <Plus className="h-3.5 w-3.5 mobile-landscape:mr-0 mr-1" /> <span className="mobile-landscape:hidden">New Board</span>
-        </Button>
         {selectedBoardId && (
           <>
             <DropdownMenu>
@@ -6805,6 +6802,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => { setNewBoardName(""); setShowNewBoardDialog(true); }} data-testid="button-new-board">
+                  <Plus className="h-4 w-4 mr-2" /> New Board
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => { setRenameName(selectedBoard?.name || ""); setShowRenameDialog(true); }} data-testid="menu-rename-board">
                   <Edit3 className="h-4 w-4 mr-2" /> Rename
                 </DropdownMenuItem>
@@ -6839,6 +6839,11 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
               </DropdownMenuContent>
             </DropdownMenu>
           </>
+        )}
+        {!selectedBoardId && (
+          <Button variant="ghost" size="sm" className="h-8 hover:bg-primary/10 hover:text-primary" onClick={() => { setNewBoardName(""); setShowNewBoardDialog(true); }} data-testid="button-new-board">
+            <Plus className="h-3.5 w-3.5 mr-1" /> <span>New Board</span>
+          </Button>
         )}
         </div>
         <Separator orientation="vertical" className="h-5 mx-1.5 hidden md:block" />
@@ -7072,12 +7077,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
           </Popover>
           <Separator orientation="vertical" className="h-4 mx-1" />
           {/* Side-drawer triggers — Assets and Materials drawer (now also called Assets).
-              Mutually exclusive (clicking one closes the others). Dot grid toggle visualizes
-              the snap grid that PR #54's auto-grid uses; persisted per-user in localStorage.
-              The old Photos drawer was merged into the Assets drawer below — raw uploads,
-              paints, materials, hardware, and products all live in one panel now. */}
-          {/* Furniture drawer button removed — the user noted it's redundant with the left sidebar
-              and was cramped when opened. Furniture remains accessible from the project sidebar. */}
+              Mutually exclusive (clicking one closes the others). The old Photos drawer was merged
+              into the Assets drawer below — raw uploads, paints, materials, hardware, and products
+              all live in one panel now. */}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -7092,48 +7094,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">Assets</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                className={`h-8 w-8 ${showDotGrid ? "bg-primary/15 text-primary" : "hover:bg-primary/10 hover:text-primary"}`}
-                onClick={toggleDotGrid}
-                aria-pressed={showDotGrid}
-                data-testid="button-toggle-dot-grid"
-              >
-                <Grid3x3 className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">{showDotGrid ? "Hide dot grid" : "Show dot grid"}</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-8 px-2 gap-1 hover:bg-primary/10 hover:text-primary disabled:opacity-40"
-                onClick={handleTidyBoard}
-                disabled={lockLayout || tidyCandidates.length < 2}
-                data-testid="button-tidy-board"
-              >
-                <LayoutGrid className="h-4 w-4" />
-                <span
-                  className="text-[10px] font-semibold uppercase tracking-[0.14em] hidden lg:inline"
-                  style={{ fontFamily: "var(--font-mono)" }}
-                >
-                  Tidy
-                </span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              {lockLayout
-                ? "Unlock layout to tidy"
-                : tidyCandidates.length < 2
-                  ? "Add more items to tidy"
-                  : "Tidy visible board items"}
-            </TooltipContent>
           </Tooltip>
           <Separator orientation="vertical" className="h-4 mx-1" />
           <Tooltip>
@@ -7221,6 +7181,13 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                 <Hand className={`h-4 w-4 mr-2 ${touchDrawing ? "text-primary" : ""}`} />
                 {touchDrawing ? "Touch drawing: On" : "Touch drawing: Off"}
               </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={toggleDotGrid}
+                data-testid="menu-dot-grid"
+              >
+                <Grid3x3 className={`h-4 w-4 mr-2 ${showDotGrid ? "text-primary" : ""}`} />
+                {showDotGrid ? "Dot grid: On" : "Dot grid: Off"}
+              </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={handleTidyBoard}
                     disabled={lockLayout || tidyCandidates.length < 2}
@@ -7238,13 +7205,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                   >
                     <Play className="h-4 w-4 mr-2" />
                     Present
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => setShowCritique((v) => !v)}
-                    data-testid="menu-design-critique"
-                  >
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    AI partner
                   </DropdownMenuItem>
                   {selectedBoardId !== null && (
                     <DropdownMenuItem
@@ -9594,9 +9554,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
           elements={Object.values(elements)}
         />
       )}
-      {showCritique && selectedBoardId !== null && (actualRole === "admin" || actualRole === "crew") && (
+      {selectedBoardId !== null && (actualRole === "admin" || actualRole === "crew") && (
         <AIPartnerPanel
           open={showCritique}
+          onOpen={() => setShowCritique(true)}
           onClose={() => setShowCritique(false)}
           projectId={projectId}
           boardId={selectedBoardId}
