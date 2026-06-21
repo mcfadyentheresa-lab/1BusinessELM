@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { syncToFrontDoor } from "@/services/elmSyncService";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -130,6 +131,13 @@ export default function ProjectSettings() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project", projectId] });
       toast({ title: "Project settings saved" });
+      const cached = qc.getQueryData<any[]>(["projects"]);
+      if (cached?.length) {
+        syncToFrontDoor({
+          projects: cached.map((p) => ({ id: String(p.id), title: p.name, status: p.status, deadline: p.end_date ?? null, priority: null })),
+          pendingReviewCount: 0,
+        });
+      }
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });

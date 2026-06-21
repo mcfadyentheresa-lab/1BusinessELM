@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { supabase } from "@/lib/supabase";
@@ -19,6 +19,7 @@ import { toast } from "@/hooks/use-toast";
 import { FolderOpen, Plus, ArrowRight, Clock, DollarSign, CheckCircle2, Loader2, Camera } from "lucide-react";
 import { useUpdateProjectCover } from "@/hooks/use-projects";
 import type { Project } from "@/shared/database.types";
+import { syncToFrontDoor } from "@/services/elmSyncService";
 
 const STATUS_LABELS: Record<string, string> = {
   planning: "Planning",
@@ -226,6 +227,10 @@ function NewProjectDialog({ open, onClose }: { open: boolean; onClose: () => voi
     onSuccess: (project) => {
       toast({ title: "Project created" });
       qc.invalidateQueries({ queryKey: ["projects"] });
+      syncToFrontDoor({
+        projects: [{ id: String(project.id), title: form.name.trim(), status: form.status, deadline: null, priority: null }],
+        pendingReviewCount: 0,
+      });
       onClose();
       navigate(`/project/${project.id}`);
     },
@@ -338,6 +343,20 @@ function AdminDashboard() {
       return data ?? [];
     },
   });
+
+  useEffect(() => {
+    if (!projects?.length) return;
+    syncToFrontDoor({
+      projects: projects.map((p) => ({
+        id: String(p.id),
+        title: p.name,
+        status: p.status,
+        deadline: p.end_date ?? null,
+        priority: null,
+      })),
+      pendingReviewCount: 0,
+    });
+  }, [projects]);
 
   const active = projects?.filter((p) => p.status === "active" || p.status === "in_progress") ?? [];
   const planning = projects?.filter((p) => p.status === "planning") ?? [];
