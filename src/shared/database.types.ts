@@ -30,6 +30,43 @@ export interface Database {
           updated_at?: string;
         };
       };
+      tenant_settings: {
+        Row: {
+          id: number;
+          tenant_key: string;
+          brand_name: string;
+          brand_website: string | null;
+          support_email: string | null;
+          legal_name: string | null;
+          logo_url: string | null;
+          primary_color: string | null;
+          app_url: string | null;
+          sms_enabled: boolean;
+          sms_invites_enabled: boolean;
+          sms_require_approval: boolean;
+          sms_quiet_hours_start: number;
+          sms_quiet_hours_end: number;
+          sms_quiet_hours_days: Json;
+          timezone: string;
+          hero_image_url: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["tenant_settings"]["Row"], "id" | "created_at" | "updated_at">;
+        Update: Partial<Database["public"]["Tables"]["tenant_settings"]["Insert"]>;
+      };
+      feature_flags: {
+        Row: {
+          id: number;
+          tenant_key: string;
+          flag_key: string;
+          enabled: boolean;
+          description: string | null;
+          updated_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["feature_flags"]["Row"], "id">;
+        Update: Partial<Database["public"]["Tables"]["feature_flags"]["Insert"]>;
+      };
       projects: {
         Row: {
           id: number;
@@ -75,6 +112,31 @@ export interface Database {
         Insert: Omit<Database["public"]["Tables"]["milestones"]["Row"], "id">;
         Update: Partial<Database["public"]["Tables"]["milestones"]["Insert"]>;
       };
+      sub_milestones: {
+        Row: {
+          id: number;
+          milestone_id: number;
+          title: string;
+          completed: boolean | null;
+          order: number | null;
+        };
+        Insert: Omit<Database["public"]["Tables"]["sub_milestones"]["Row"], "id">;
+        Update: Partial<Database["public"]["Tables"]["sub_milestones"]["Insert"]>;
+      };
+      sections: {
+        Row: {
+          id: number;
+          milestone_id: number;
+          project_id: number;
+          title: string;
+          start_date: string | null;
+          end_date: string | null;
+          completed: boolean | null;
+          order: number | null;
+        };
+        Insert: Omit<Database["public"]["Tables"]["sections"]["Row"], "id">;
+        Update: Partial<Database["public"]["Tables"]["sections"]["Insert"]>;
+      };
       tasks: {
         Row: {
           id: number;
@@ -109,6 +171,18 @@ export interface Database {
         Insert: Omit<Database["public"]["Tables"]["photos"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["photos"]["Insert"]>;
       };
+      documents: {
+        Row: {
+          id: number;
+          project_id: number;
+          title: string;
+          url: string;
+          type: string;
+          created_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["documents"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["documents"]["Insert"]>;
+      };
       messages: {
         Row: {
           id: number;
@@ -120,6 +194,150 @@ export interface Database {
         };
         Insert: Omit<Database["public"]["Tables"]["messages"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["messages"]["Insert"]>;
+      };
+      checklist_items: {
+        Row: {
+          id: number;
+          project_id: number;
+          title: string;
+          completed: boolean | null;
+          created_by: string | null;
+          notes: string | null;
+          price_estimate: number | null;
+          priority: string | null;
+          group: string | null;
+          status: string | null;
+          color: string | null;
+          requires_client: boolean | null;
+          created_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["checklist_items"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["checklist_items"]["Insert"]>;
+      };
+      calendar_events: {
+        Row: {
+          id: number;
+          project_id: number;
+          title: string;
+          description: string | null;
+          date: string;
+          end_date: string | null;
+          type: string | null;
+          image_url: string | null;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["calendar_events"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["calendar_events"]["Insert"]>;
+      };
+      activity_log: {
+        Row: {
+          id: number;
+          project_id: number;
+          user_id: string | null;
+          type: string;
+          title: string;
+          description: string | null;
+          created_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["activity_log"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["activity_log"]["Insert"]>;
+      };
+      activity_views: {
+        Row: {
+          id: number;
+          activity_id: number;
+          user_id: string;
+          viewed_at: string | null;
+        };
+        Insert: Omit<Database["public"]["Tables"]["activity_views"]["Row"], "id">;
+        Update: Partial<Database["public"]["Tables"]["activity_views"]["Insert"]>;
+      };
+      decisions: {
+        Row: {
+          id: number;
+          project_id: number;
+          title: string;
+          decision: string;
+          context: string | null;
+          decided_on: string;
+          decided_by: string | null;
+          category: string | null;
+          related_milestone_id: number | null;
+          attachment_photo_id: number | null;
+          archived: boolean | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["decisions"]["Row"], "id" | "created_at" | "updated_at">;
+        Update: Partial<Database["public"]["Tables"]["decisions"]["Insert"]>;
+      };
+      change_orders: {
+        Row: {
+          id: number;
+          project_id: number;
+          number: number;
+          title: string;
+          description: string | null;
+          amount: string;
+          status: string;
+          sent_on: string | null;
+          decided_on: string | null;
+          decided_by: string | null;
+          notes: string | null;
+          attachment_document_id: number | null;
+          archived: boolean | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["change_orders"]["Row"], "id" | "created_at" | "updated_at">;
+        Update: Partial<Database["public"]["Tables"]["change_orders"]["Insert"]>;
+      };
+      site_visits: {
+        Row: {
+          id: number;
+          project_id: number;
+          visited_on: string;
+          visit_type: string;
+          attendees: string | null;
+          summary: string;
+          follow_ups: string | null;
+          weather: string | null;
+          archived: boolean | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["site_visits"]["Row"], "id" | "created_at" | "updated_at">;
+        Update: Partial<Database["public"]["Tables"]["site_visits"]["Insert"]>;
+      };
+      selections: {
+        Row: {
+          id: number;
+          project_id: number;
+          room: string | null;
+          category: string | null;
+          item: string;
+          product: string | null;
+          vendor: string | null;
+          sku: string | null;
+          quantity: string | null;
+          status: string;
+          lead_time_days: number | null;
+          ordered_on: string | null;
+          expected_on: string | null;
+          installed_on: string | null;
+          notes: string | null;
+          attachment_photo_id: number | null;
+          related_decision_id: number | null;
+          archived: boolean | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["selections"]["Row"], "id" | "created_at" | "updated_at">;
+        Update: Partial<Database["public"]["Tables"]["selections"]["Insert"]>;
       };
       planning_boards: {
         Row: {
@@ -160,6 +378,70 @@ export interface Database {
         Insert: Omit<Database["public"]["Tables"]["canvas_elements"]["Row"], "id" | "created_at" | "updated_at">;
         Update: Partial<Database["public"]["Tables"]["canvas_elements"]["Insert"]>;
       };
+      board_items: {
+        Row: {
+          id: number;
+          project_id: number;
+          type: string;
+          title: string | null;
+          content: string | null;
+          image_url: string | null;
+          link_url: string | null;
+          color: string | null;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["board_items"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["board_items"]["Insert"]>;
+      };
+      board_snapshots: {
+        Row: {
+          id: number;
+          board_id: number;
+          name: string;
+          canvas_data: Json;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["board_snapshots"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["board_snapshots"]["Insert"]>;
+      };
+      board_templates: {
+        Row: {
+          id: number;
+          name: string;
+          description: string | null;
+          canvas_data: Json;
+          source_board_id: number | null;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["board_templates"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["board_templates"]["Insert"]>;
+      };
+      recent_project_views: {
+        Row: {
+          id: number;
+          user_id: string;
+          project_id: number;
+          last_board_id: number | null;
+          viewed_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["recent_project_views"]["Row"], "id">;
+        Update: Partial<Database["public"]["Tables"]["recent_project_views"]["Insert"]>;
+      };
+      board_presentation_tokens: {
+        Row: {
+          id: number;
+          board_id: number;
+          token: string;
+          created_by: string | null;
+          created_at: string;
+          expires_at: string | null;
+        };
+        Insert: Omit<Database["public"]["Tables"]["board_presentation_tokens"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["board_presentation_tokens"]["Insert"]>;
+      };
       paint_colors: {
         Row: {
           id: number;
@@ -174,6 +456,86 @@ export interface Database {
         };
         Insert: Omit<Database["public"]["Tables"]["paint_colors"]["Row"], "id">;
         Update: Partial<Database["public"]["Tables"]["paint_colors"]["Insert"]>;
+      };
+      cost_categories: {
+        Row: {
+          id: number;
+          name: string;
+          description: string | null;
+          default_unit_type: string;
+          sort_order: number | null;
+        };
+        Insert: Omit<Database["public"]["Tables"]["cost_categories"]["Row"], "id">;
+        Update: Partial<Database["public"]["Tables"]["cost_categories"]["Insert"]>;
+      };
+      market_rates: {
+        Row: {
+          id: number;
+          category_id: number;
+          unit_type: string;
+          low_rate: string;
+          high_rate: string;
+          typical_rate: string;
+          effective_date: string;
+          is_active: boolean | null;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["market_rates"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["market_rates"]["Insert"]>;
+      };
+      crew_rates: {
+        Row: {
+          id: number;
+          user_id: string | null;
+          name: string;
+          role: string | null;
+          pay_rate: string;
+          billable_rate: string;
+          is_active: boolean | null;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["crew_rates"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["crew_rates"]["Insert"]>;
+      };
+      subcontractors: {
+        Row: {
+          id: number;
+          business_name: string;
+          contact_name: string | null;
+          phone: string | null;
+          email: string | null;
+          category_id: number | null;
+          trade: string | null;
+          hourly_rate: string | null;
+          daily_rate: string | null;
+          unit_rate: string | null;
+          unit_type: string | null;
+          is_preferred: boolean | null;
+          is_active: boolean | null;
+          address: string | null;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["subcontractors"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["subcontractors"]["Insert"]>;
+      };
+      suppliers: {
+        Row: {
+          id: number;
+          name: string;
+          phone: string | null;
+          email: string | null;
+          address: string | null;
+          website: string | null;
+          is_preferred: boolean | null;
+          is_active: boolean | null;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["suppliers"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["suppliers"]["Insert"]>;
       };
       project_estimates: {
         Row: {
@@ -196,6 +558,101 @@ export interface Database {
         };
         Insert: Omit<Database["public"]["Tables"]["project_estimates"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["project_estimates"]["Insert"]>;
+      };
+      estimate_items: {
+        Row: {
+          id: number;
+          estimate_id: number;
+          category_id: number | null;
+          custom_category: string | null;
+          room: string | null;
+          product_url: string | null;
+          unit_type: string;
+          quantity: string;
+          unit_cost: string;
+          material_cost: string;
+          labor_cost: string;
+          is_custom_rate: boolean | null;
+          market_rate_id: number | null;
+          notes: string | null;
+          crew_rate_id: number | null;
+          subcontractor_id: number | null;
+          created_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["estimate_items"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["estimate_items"]["Insert"]>;
+      };
+      estimate_warnings: {
+        Row: {
+          id: number;
+          estimate_item_id: number;
+          warning_type: string;
+          message: string;
+          percent_diff: string | null;
+          ignored: boolean | null;
+          ignored_by: string | null;
+          ignored_at: string | null;
+        };
+        Insert: Omit<Database["public"]["Tables"]["estimate_warnings"]["Row"], "id">;
+        Update: Partial<Database["public"]["Tables"]["estimate_warnings"]["Insert"]>;
+      };
+      receipts: {
+        Row: {
+          id: number;
+          project_id: number;
+          estimate_item_id: number | null;
+          vendor: string;
+          description: string | null;
+          date: string;
+          amount: string;
+          file_url: string | null;
+          line_items: Json | null;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["receipts"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["receipts"]["Insert"]>;
+      };
+      supplier_prices: {
+        Row: {
+          id: number;
+          supplier_id: number;
+          product_name: string;
+          category_id: number | null;
+          unit_price: string;
+          unit_type: string;
+          product_code: string | null;
+          product_url: string | null;
+          source_receipt_id: number | null;
+          notes: string | null;
+          last_updated: string | null;
+          created_by: string | null;
+          created_at: string;
+          coverage_value: number | null;
+          coverage_unit: string | null;
+          waste_pct: number | null;
+          quality_tier: string | null;
+        };
+        Insert: Omit<Database["public"]["Tables"]["supplier_prices"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["supplier_prices"]["Insert"]>;
+      };
+      regional_modifiers: {
+        Row: {
+          id: number;
+          region: string;
+          modifier_type: string;
+          name: string;
+          value: string | null;
+          unit: string | null;
+          applies_to: string | null;
+          description: string | null;
+          source_url: string | null;
+          last_verified: string | null;
+          is_active: boolean | null;
+          created_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["regional_modifiers"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["regional_modifiers"]["Insert"]>;
       };
       time_entries: {
         Row: {
@@ -221,29 +678,132 @@ export interface Database {
         Insert: Omit<Database["public"]["Tables"]["time_entries"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["time_entries"]["Insert"]>;
       };
-      tenant_settings: {
+      queued_sms: {
         Row: {
           id: number;
-          tenant_key: string;
-          brand_name: string;
-          brand_website: string | null;
-          support_email: string | null;
-          legal_name: string | null;
-          logo_url: string | null;
-          primary_color: string | null;
-          app_url: string | null;
-          sms_enabled: boolean;
-          sms_invites_enabled: boolean;
-          sms_require_approval: boolean;
-          sms_quiet_hours_start: number;
-          sms_quiet_hours_end: number;
-          sms_quiet_hours_days: Json;
-          timezone: string;
+          to_phone: string;
+          body: string;
+          created_at: string;
+          scheduled_for: string | null;
+          sent: boolean | null;
+          sent_at: string | null;
+          error: string | null;
+        };
+        Insert: Omit<Database["public"]["Tables"]["queued_sms"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["queued_sms"]["Insert"]>;
+      };
+      social_posts: {
+        Row: {
+          id: number;
+          project_id: number;
+          title: string;
+          copy: string;
+          platform: string;
+          tone: string | null;
+          photo_url: string | null;
+          photo_id: number | null;
+          status: string;
+          source: string | null;
+          seen_at: string | null;
+          posted_at: string | null;
           created_at: string;
           updated_at: string;
         };
-        Insert: Omit<Database["public"]["Tables"]["tenant_settings"]["Row"], "id" | "created_at" | "updated_at">;
-        Update: Partial<Database["public"]["Tables"]["tenant_settings"]["Insert"]>;
+        Insert: Omit<Database["public"]["Tables"]["social_posts"]["Row"], "id" | "created_at" | "updated_at">;
+        Update: Partial<Database["public"]["Tables"]["social_posts"]["Insert"]>;
+      };
+      cinematic_reviews: {
+        Row: {
+          id: number;
+          project_id: number;
+          board_id: number | null;
+          room_name: string;
+          format: string;
+          status: string;
+          video_url: string | null;
+          thumbnail_url: string | null;
+          duration_sec: number | null;
+          error_message: string | null;
+          created_at: string;
+          created_by: string | null;
+        };
+        Insert: Omit<Database["public"]["Tables"]["cinematic_reviews"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["cinematic_reviews"]["Insert"]>;
+      };
+      room_renders: {
+        Row: {
+          id: number;
+          project_id: number;
+          board_id: number | null;
+          room_name: string;
+          mode: string;
+          image_url: string | null;
+          thumbnail_url: string | null;
+          prompt: string;
+          status: string;
+          error_message: string | null;
+          cost_estimate_cents: number | null;
+          created_at: string;
+          created_by: string | null;
+        };
+        Insert: Omit<Database["public"]["Tables"]["room_renders"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["room_renders"]["Insert"]>;
+      };
+      table_redesign_plans: {
+        Row: {
+          id: number;
+          project_id: number;
+          piece_type: string;
+          piece_name: string;
+          before_image_url: string | null;
+          inspiration_image_url: string | null;
+          concept_image_url: string | null;
+          table_shape: string;
+          length_inches: number | null;
+          width_inches: number | null;
+          height_inches: number | null;
+          thickness_inches: number | null;
+          weight_class: string;
+          existing_material: string | null;
+          redesign_scope: string;
+          proposed_base_type: string | null;
+          style_direction: string | null;
+          finish_direction: string | null;
+          notes: string | null;
+          concept_title: string | null;
+          concept_description: string | null;
+          base_size_min_inches: number | null;
+          base_size_max_inches: number | null;
+          base_size_notes: string | null;
+          build_notes: string | null;
+          tag: string | null;
+          intended_use: string | null;
+          priority_constraint: string | null;
+          approval_status: string;
+          status: string;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["table_redesign_plans"]["Row"], "id" | "created_at" | "updated_at">;
+        Update: Partial<Database["public"]["Tables"]["table_redesign_plans"]["Insert"]>;
+      };
+      table_redesign_materials: {
+        Row: {
+          id: number;
+          plan_id: number;
+          component: string;
+          material: string | null;
+          finish: string | null;
+          dimensions: string | null;
+          quantity: number | null;
+          notes: string | null;
+          supplier: string | null;
+          web_link: string | null;
+          created_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["table_redesign_materials"]["Row"], "id" | "created_at">;
+        Update: Partial<Database["public"]["Tables"]["table_redesign_materials"]["Insert"]>;
       };
       client_invites: {
         Row: {
@@ -280,6 +840,48 @@ export interface Database {
         Insert: Omit<Database["public"]["Tables"]["project_wishlist_items"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["project_wishlist_items"]["Insert"]>;
       };
+      material_price_history: {
+        Row: {
+          id: number;
+          material_id: number;
+          unit_price: string;
+          recorded_at: string;
+          notes: string | null;
+        };
+        Insert: Omit<Database["public"]["Tables"]["material_price_history"]["Row"], "id">;
+        Update: Partial<Database["public"]["Tables"]["material_price_history"]["Insert"]>;
+      };
+      estimate_assemblies: {
+        Row: {
+          id: number;
+          name: string;
+          description: string | null;
+          category_id: number | null;
+          quality_tier: string | null;
+          notes: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["estimate_assemblies"]["Row"], "id" | "created_at" | "updated_at">;
+        Update: Partial<Database["public"]["Tables"]["estimate_assemblies"]["Insert"]>;
+      };
+      assembly_materials: {
+        Row: {
+          id: number;
+          assembly_id: number;
+          material_id: number | null;
+          material_name: string;
+          unit_type: string;
+          qty_per_sqft: number;
+          unit_cost: number;
+          waste_pct: number;
+          notes: string | null;
+          sort_order: number;
+        };
+        Insert: Omit<Database["public"]["Tables"]["assembly_materials"]["Row"], "id">;
+        Update: Partial<Database["public"]["Tables"]["assembly_materials"]["Insert"]>;
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -287,18 +889,54 @@ export interface Database {
   };
 }
 
-// Convenience type aliases
+// Convenience row-type aliases
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
+export type TenantSettings = Database["public"]["Tables"]["tenant_settings"]["Row"];
+export type FeatureFlag = Database["public"]["Tables"]["feature_flags"]["Row"];
 export type Project = Database["public"]["Tables"]["projects"]["Row"];
 export type Milestone = Database["public"]["Tables"]["milestones"]["Row"];
+export type SubMilestone = Database["public"]["Tables"]["sub_milestones"]["Row"];
+export type Section = Database["public"]["Tables"]["sections"]["Row"];
 export type Task = Database["public"]["Tables"]["tasks"]["Row"];
 export type Photo = Database["public"]["Tables"]["photos"]["Row"];
+export type Document = Database["public"]["Tables"]["documents"]["Row"];
 export type Message = Database["public"]["Tables"]["messages"]["Row"];
+export type ChecklistItem = Database["public"]["Tables"]["checklist_items"]["Row"];
+export type CalendarEvent = Database["public"]["Tables"]["calendar_events"]["Row"];
+export type ActivityLog = Database["public"]["Tables"]["activity_log"]["Row"];
+export type ActivityView = Database["public"]["Tables"]["activity_views"]["Row"];
+export type Decision = Database["public"]["Tables"]["decisions"]["Row"];
+export type ChangeOrder = Database["public"]["Tables"]["change_orders"]["Row"];
+export type SiteVisit = Database["public"]["Tables"]["site_visits"]["Row"];
+export type Selection = Database["public"]["Tables"]["selections"]["Row"];
 export type PlanningBoard = Database["public"]["Tables"]["planning_boards"]["Row"];
 export type CanvasElement = Database["public"]["Tables"]["canvas_elements"]["Row"];
+export type BoardItem = Database["public"]["Tables"]["board_items"]["Row"];
+export type BoardSnapshot = Database["public"]["Tables"]["board_snapshots"]["Row"];
+export type BoardTemplate = Database["public"]["Tables"]["board_templates"]["Row"];
+export type RecentProjectView = Database["public"]["Tables"]["recent_project_views"]["Row"];
+export type BoardPresentationToken = Database["public"]["Tables"]["board_presentation_tokens"]["Row"];
 export type PaintColor = Database["public"]["Tables"]["paint_colors"]["Row"];
+export type CostCategory = Database["public"]["Tables"]["cost_categories"]["Row"];
+export type MarketRate = Database["public"]["Tables"]["market_rates"]["Row"];
+export type CrewRate = Database["public"]["Tables"]["crew_rates"]["Row"];
+export type Subcontractor = Database["public"]["Tables"]["subcontractors"]["Row"];
+export type Supplier = Database["public"]["Tables"]["suppliers"]["Row"];
 export type ProjectEstimate = Database["public"]["Tables"]["project_estimates"]["Row"];
+export type EstimateItem = Database["public"]["Tables"]["estimate_items"]["Row"];
+export type EstimateWarning = Database["public"]["Tables"]["estimate_warnings"]["Row"];
+export type Receipt = Database["public"]["Tables"]["receipts"]["Row"];
+export type SupplierPrice = Database["public"]["Tables"]["supplier_prices"]["Row"];
+export type RegionalModifier = Database["public"]["Tables"]["regional_modifiers"]["Row"];
 export type TimeEntry = Database["public"]["Tables"]["time_entries"]["Row"];
-export type TenantSettings = Database["public"]["Tables"]["tenant_settings"]["Row"];
+export type QueuedSms = Database["public"]["Tables"]["queued_sms"]["Row"];
+export type SocialPost = Database["public"]["Tables"]["social_posts"]["Row"];
+export type CinematicReview = Database["public"]["Tables"]["cinematic_reviews"]["Row"];
+export type RoomRender = Database["public"]["Tables"]["room_renders"]["Row"];
+export type TableRedesignPlan = Database["public"]["Tables"]["table_redesign_plans"]["Row"];
+export type TableRedesignMaterial = Database["public"]["Tables"]["table_redesign_materials"]["Row"];
 export type ClientInvite = Database["public"]["Tables"]["client_invites"]["Row"];
 export type WishlistItem = Database["public"]["Tables"]["project_wishlist_items"]["Row"];
+export type MaterialPriceHistory = Database["public"]["Tables"]["material_price_history"]["Row"];
+export type EstimateAssembly = Database["public"]["Tables"]["estimate_assemblies"]["Row"];
+export type AssemblyMaterial = Database["public"]["Tables"]["assembly_materials"]["Row"];
