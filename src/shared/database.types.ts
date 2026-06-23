@@ -1,5 +1,15 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
+// NOT NULL timestamp columns (live DB verified):
+//   profiles.created_at / updated_at
+//   tenant_settings.created_at / updated_at
+//   feature_flags.updated_at
+//   estimate_assemblies.created_at / updated_at
+//   project_wishlist_items.created_at
+//   recent_project_views.viewed_at
+//   material_price_history.recorded_at
+// All other created_at / updated_at are nullable in the live DB (DEFAULT now(), no NOT NULL).
+
 export interface Database {
   public: {
     Tables: {
@@ -90,7 +100,7 @@ export interface Database {
           budget_used: number | null;
           budget_visible_to_client: boolean | null;
           color_tag_id: number | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["projects"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["projects"]["Insert"]>;
@@ -150,7 +160,7 @@ export interface Database {
           start_date: string | null;
           due_date: string | null;
           order: number | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["tasks"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["tasks"]["Insert"]>;
@@ -166,7 +176,7 @@ export interface Database {
           is_before_after: boolean | null;
           planning_board_id: number | null;
           inspiration: boolean | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["photos"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["photos"]["Insert"]>;
@@ -178,7 +188,7 @@ export interface Database {
           title: string;
           url: string;
           type: string;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["documents"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["documents"]["Insert"]>;
@@ -190,7 +200,7 @@ export interface Database {
           sender_id: string;
           content: string;
           image_url: string | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["messages"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["messages"]["Insert"]>;
@@ -209,7 +219,7 @@ export interface Database {
           status: string | null;
           color: string | null;
           requires_client: boolean | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["checklist_items"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["checklist_items"]["Insert"]>;
@@ -225,7 +235,7 @@ export interface Database {
           type: string | null;
           image_url: string | null;
           created_by: string | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["calendar_events"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["calendar_events"]["Insert"]>;
@@ -238,7 +248,7 @@ export interface Database {
           type: string;
           title: string;
           description: string | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["activity_log"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["activity_log"]["Insert"]>;
@@ -266,8 +276,8 @@ export interface Database {
           related_milestone_id: number | null;
           attachment_photo_id: number | null;
           archived: boolean | null;
-          created_at: string;
-          updated_at: string;
+          created_at: string | null;
+          updated_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["decisions"]["Row"], "id" | "created_at" | "updated_at">;
         Update: Partial<Database["public"]["Tables"]["decisions"]["Insert"]>;
@@ -288,8 +298,8 @@ export interface Database {
           attachment_document_id: number | null;
           archived: boolean | null;
           created_by: string | null;
-          created_at: string;
-          updated_at: string;
+          created_at: string | null;
+          updated_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["change_orders"]["Row"], "id" | "created_at" | "updated_at">;
         Update: Partial<Database["public"]["Tables"]["change_orders"]["Insert"]>;
@@ -306,8 +316,8 @@ export interface Database {
           weather: string | null;
           archived: boolean | null;
           created_by: string | null;
-          created_at: string;
-          updated_at: string;
+          created_at: string | null;
+          updated_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["site_visits"]["Row"], "id" | "created_at" | "updated_at">;
         Update: Partial<Database["public"]["Tables"]["site_visits"]["Insert"]>;
@@ -333,8 +343,8 @@ export interface Database {
           related_decision_id: number | null;
           archived: boolean | null;
           created_by: string | null;
-          created_at: string;
-          updated_at: string;
+          created_at: string | null;
+          updated_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["selections"]["Row"], "id" | "created_at" | "updated_at">;
         Update: Partial<Database["public"]["Tables"]["selections"]["Insert"]>;
@@ -354,7 +364,7 @@ export interface Database {
           color_tag_id: number | null;
           updated_at: string | null;
           updated_by: string | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["planning_boards"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["planning_boards"]["Insert"]>;
@@ -372,8 +382,8 @@ export interface Database {
           parent_column_id: number | null;
           content: Json | null;
           created_by: string | null;
-          created_at: string;
-          updated_at: string;
+          created_at: string | null;
+          updated_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["canvas_elements"]["Row"], "id" | "created_at" | "updated_at">;
         Update: Partial<Database["public"]["Tables"]["canvas_elements"]["Insert"]>;
@@ -389,7 +399,7 @@ export interface Database {
           link_url: string | null;
           color: string | null;
           created_by: string | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["board_items"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["board_items"]["Insert"]>;
@@ -401,7 +411,7 @@ export interface Database {
           name: string;
           canvas_data: Json;
           created_by: string | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["board_snapshots"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["board_snapshots"]["Insert"]>;
@@ -414,7 +424,7 @@ export interface Database {
           canvas_data: Json;
           source_board_id: number | null;
           created_by: string | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["board_templates"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["board_templates"]["Insert"]>;
@@ -436,7 +446,7 @@ export interface Database {
           board_id: number;
           token: string;
           created_by: string | null;
-          created_at: string;
+          created_at: string | null;
           expires_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["board_presentation_tokens"]["Row"], "id" | "created_at">;
@@ -479,7 +489,7 @@ export interface Database {
           effective_date: string;
           is_active: boolean | null;
           notes: string | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["market_rates"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["market_rates"]["Insert"]>;
@@ -494,7 +504,7 @@ export interface Database {
           billable_rate: string;
           is_active: boolean | null;
           notes: string | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["crew_rates"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["crew_rates"]["Insert"]>;
@@ -516,7 +526,7 @@ export interface Database {
           is_active: boolean | null;
           address: string | null;
           notes: string | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["subcontractors"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["subcontractors"]["Insert"]>;
@@ -532,7 +542,7 @@ export interface Database {
           is_preferred: boolean | null;
           is_active: boolean | null;
           notes: string | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["suppliers"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["suppliers"]["Insert"]>;
@@ -554,7 +564,7 @@ export interface Database {
           management_fee_enabled: boolean | null;
           management_fee_percent: string;
           created_by: string | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["project_estimates"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["project_estimates"]["Insert"]>;
@@ -577,7 +587,7 @@ export interface Database {
           notes: string | null;
           crew_rate_id: number | null;
           subcontractor_id: number | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["estimate_items"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["estimate_items"]["Insert"]>;
@@ -608,7 +618,7 @@ export interface Database {
           file_url: string | null;
           line_items: Json | null;
           created_by: string | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["receipts"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["receipts"]["Insert"]>;
@@ -627,7 +637,7 @@ export interface Database {
           notes: string | null;
           last_updated: string | null;
           created_by: string | null;
-          created_at: string;
+          created_at: string | null;
           coverage_value: number | null;
           coverage_unit: string | null;
           waste_pct: number | null;
@@ -649,7 +659,7 @@ export interface Database {
           source_url: string | null;
           last_verified: string | null;
           is_active: boolean | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["regional_modifiers"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["regional_modifiers"]["Insert"]>;
@@ -673,7 +683,7 @@ export interface Database {
           submitted_at: string | null;
           approved_at: string | null;
           approved_by: string | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["time_entries"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["time_entries"]["Insert"]>;
@@ -683,7 +693,7 @@ export interface Database {
           id: number;
           to_phone: string;
           body: string;
-          created_at: string;
+          created_at: string | null;
           scheduled_for: string | null;
           sent: boolean | null;
           sent_at: string | null;
@@ -706,8 +716,8 @@ export interface Database {
           source: string | null;
           seen_at: string | null;
           posted_at: string | null;
-          created_at: string;
-          updated_at: string;
+          created_at: string | null;
+          updated_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["social_posts"]["Row"], "id" | "created_at" | "updated_at">;
         Update: Partial<Database["public"]["Tables"]["social_posts"]["Insert"]>;
@@ -724,7 +734,7 @@ export interface Database {
           thumbnail_url: string | null;
           duration_sec: number | null;
           error_message: string | null;
-          created_at: string;
+          created_at: string | null;
           created_by: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["cinematic_reviews"]["Row"], "id" | "created_at">;
@@ -743,7 +753,7 @@ export interface Database {
           status: string;
           error_message: string | null;
           cost_estimate_cents: number | null;
-          created_at: string;
+          created_at: string | null;
           created_by: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["room_renders"]["Row"], "id" | "created_at">;
@@ -782,8 +792,8 @@ export interface Database {
           approval_status: string;
           status: string;
           created_by: string | null;
-          created_at: string;
-          updated_at: string;
+          created_at: string | null;
+          updated_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["table_redesign_plans"]["Row"], "id" | "created_at" | "updated_at">;
         Update: Partial<Database["public"]["Tables"]["table_redesign_plans"]["Insert"]>;
@@ -800,7 +810,7 @@ export interface Database {
           notes: string | null;
           supplier: string | null;
           web_link: string | null;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["table_redesign_materials"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["table_redesign_materials"]["Insert"]>;
@@ -820,7 +830,7 @@ export interface Database {
           expires_at: string;
           accepted_at: string | null;
           status: string;
-          created_at: string;
+          created_at: string | null;
         };
         Insert: Omit<Database["public"]["Tables"]["client_invites"]["Row"], "id" | "created_at">;
         Update: Partial<Database["public"]["Tables"]["client_invites"]["Insert"]>;
