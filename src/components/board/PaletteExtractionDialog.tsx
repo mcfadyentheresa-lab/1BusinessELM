@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,12 +15,34 @@ interface ExtractedColor {
   percentage?: number;
 }
 
+export interface PaletteAddPayload {
+  room?: string | null;
+  rows: Array<{
+    hex: string;
+    name?: string;
+    match?: {
+      hex: string;
+      name?: string;
+      brand?: string;
+      code?: string;
+      lrv?: number;
+    } | null;
+  }>;
+}
+
 interface PaletteExtractionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  boardId: number;
-  rooms: string[];
-  onAccept: (colors: ExtractedColor[], room: string | null) => void;
+  boardId?: number;
+  // Legacy simple API
+  rooms?: string[];
+  onAccept?: (colors: ExtractedColor[], room: string | null) => void;
+  // Extended API used by PlanningBoard
+  boardImages?: Array<{ id: number; url: string; caption?: string | null }>;
+  roomSuggestions?: string[];
+  uploadImage?: (file: File) => Promise<string>;
+  onAdd?: (payload: PaletteAddPayload) => void | Promise<void>;
+  presetImageUrl?: string | null;
 }
 
 export function PaletteExtractionDialog({
@@ -29,6 +51,11 @@ export function PaletteExtractionDialog({
   boardId,
   rooms,
   onAccept,
+  boardImages,
+  roomSuggestions,
+  uploadImage,
+  onAdd,
+  presetImageUrl,
 }: PaletteExtractionDialogProps) {
   const [tab, setTab] = useState<"url" | "upload" | "board">("url");
   const [url, setUrl] = useState("");
@@ -39,6 +66,16 @@ export function PaletteExtractionDialog({
   const [room, setRoom] = useState<string>("");
   const [previewFile, setPreviewFile] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const allRooms = roomSuggestions ?? rooms ?? [];
+
+  useEffect(() => {
+    if (open && presetImageUrl) {
+      setUrl(presetImageUrl);
+      extract(presetImageUrl);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, presetImageUrl]);
 
   const extract = async (source: string | File) => {
     setExtracting(true);
@@ -75,9 +112,13 @@ export function PaletteExtractionDialog({
     });
   };
 
-  const handleAccept = () => {
+  const handleAccept = async () => {
     const picked = colors.filter((c) => selected.has(c.hex));
-    onAccept(picked, room.trim() || null);
+    if (onAdd) {
+      await onAdd({ room: room.trim() || null, rows: picked.map((c) => ({ hex: c.hex, name: c.name })) });
+    } else if (onAccept) {
+      onAccept(picked, room.trim() || null);
+    }
     setColors([]);
     setSelected(new Set());
     setUrl("");
@@ -236,7 +277,7 @@ export function PaletteExtractionDialog({
               ))}
             </div>
 
-            {rooms.length > 0 && (
+            {allRooms.length > 0 && (
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">Tag to room (optional)</Label>
                 <div className="flex flex-wrap gap-1.5">
@@ -247,7 +288,7 @@ export function PaletteExtractionDialog({
                   >
                     No room
                   </Badge>
-                  {rooms.map((r) => (
+                  {allRooms.map((r) => (
                     <Badge
                       key={r}
                       variant={room === r ? "default" : "secondary"}

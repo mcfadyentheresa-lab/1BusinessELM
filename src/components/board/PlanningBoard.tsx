@@ -100,7 +100,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useViewMode } from "@/hooks/use-view-mode";
 import { api, buildUrl } from "@/shared/routes";
 import { recognizeAllShapes, recognizeShape, looksLikeHandwriting } from "@/lib/shape-recognition";
-import type { CanvasElement, PlanningBoard as PlanningBoardType, PaintColor } from "@/shared/database.types";
+import type { CanvasElement, PlanningBoard as PlanningBoardType, PaintColor, Json } from "@/shared/database.types";
 import { queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import { loadCanvasElements, createCanvasElement, updateCanvasElement, deleteCanvasElement } from "@/lib/canvas-api";
@@ -1716,7 +1716,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     if (!selectedBoardId || fromId === toId) return;
     const content: ConnectorContent = { fromId, toId, style: "arrow", curve: "curved" };
     try {
-      const el = await createCanvasElement(selectedBoardId, { type: "connector", x: 0, y: 0, width: 0, height: 0, z_index: 0, content });
+      const el = await createCanvasElement(selectedBoardId, { type: "connector", x: 0, y: 0, width: 0, height: 0, z_index: 0, content: content as unknown as Json });
       addElement(el);
       sendElementAdd(el);
       pushUndo();
@@ -9242,7 +9242,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
             .map((e) => String((e.content as any).title).trim())
             .filter(Boolean)
         ))}
-        uploadImage={async (file) => {
+        uploadImage={async (file: File) => {
           const result = await uploadImage(file);
           return result.url;
         }}

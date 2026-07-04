@@ -1,5 +1,8 @@
 import { supabase } from "./supabase";
-import type { CanvasElement } from "../shared/database.types";
+import type { CanvasElement, Json } from "../shared/database.types";
+import type { Database } from "../shared/database.types";
+
+type CanvasElementInsert = Database["public"]["Tables"]["canvas_elements"]["Insert"];
 
 export async function loadCanvasElements(boardId: number): Promise<CanvasElement[]> {
   const { data, error } = await supabase
@@ -20,13 +23,14 @@ export async function createCanvasElement(
     width: number;
     height: number;
     z_index: number;
-    content: unknown;
+    content?: Json | null;
     parent_column_id?: number | null;
   }
 ): Promise<CanvasElement> {
+  const insert: CanvasElementInsert = { board_id: boardId, ...payload };
   const { data, error } = await supabase
     .from("canvas_elements")
-    .insert({ board_id: boardId, ...payload })
+    .insert(insert)
     .select()
     .single();
   if (error) throw error;

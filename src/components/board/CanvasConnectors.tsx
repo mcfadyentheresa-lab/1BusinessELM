@@ -129,7 +129,7 @@ export function resolveConnector(
   el: CanvasElement,
   elementsById: Record<number, CanvasElement>,
 ): ResolvedConnector | null {
-  const c = (el.content || {}) as ConnectorContent;
+  const c = (el.content || {}) as unknown as ConnectorContent;
   const fromEl = elementsById[c.fromId];
   const toEl = elementsById[c.toId];
   if (!fromEl || !toEl || fromEl.id === toEl.id) return null;

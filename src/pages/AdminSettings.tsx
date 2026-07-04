@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "@/hooks/use-toast";
 import { Building2, Users, MessageSquare, Zap, Key, Plus, Loader2, Mail, Phone, UserCircle, Trash2, Shield, Copy, Check, Camera, ImageIcon, X } from "lucide-react";
+import type { Profile, FeatureFlag, ClientInvite, TenantSettingsPatch, TenantSettingsInsert, ClientInviteInsert } from "@/lib/mappers";
 
 export default function AdminSettings() {
   const qc = useQueryClient();
@@ -84,9 +85,9 @@ export default function AdminSettings() {
       const heroUrl = `${urlData.publicUrl}?t=${Date.now()}`;
       const existing = (await supabase.from("tenant_settings").select("id").maybeSingle()).data?.id;
       if (existing) {
-        await supabase.from("tenant_settings").update({ hero_image_url: heroUrl }).eq("id", existing);
+        await supabase.from("tenant_settings").update({ hero_image_url: heroUrl } satisfies TenantSettingsPatch).eq("id", existing);
       } else {
-        await supabase.from("tenant_settings").insert({ hero_image_url: heroUrl } as any);
+        await supabase.from("tenant_settings").insert({ tenant_key: "default", brand_name: "Studio", hero_image_url: heroUrl } satisfies TenantSettingsInsert);
       }
       qc.invalidateQueries({ queryKey: ["tenant-settings"] });
       toast({ title: "Hero image updated" });
@@ -111,33 +112,33 @@ export default function AdminSettings() {
     },
   });
 
-  const { data: users, isLoading: usersLoading } = useQuery({
+  const { data: users, isLoading: usersLoading } = useQuery<Profile[]>({
     queryKey: ["all-users"],
     queryFn: async () => {
       const { data } = await supabase
         .from("profiles")
         .select("id, name, email, role, created_at, phone, avatar_url")
         .order("created_at");
-      return data ?? [];
+      return (data ?? []) as Profile[];
     },
   });
 
-  const { data: featureFlags } = useQuery({
+  const { data: featureFlags } = useQuery<FeatureFlag[]>({
     queryKey: ["feature-flags"],
     queryFn: async () => {
-      const { data } = await supabase.from("feature_flags").select("*").order("key");
-      return data ?? [];
+      const { data } = await supabase.from("feature_flags").select("*").order("flag_key");
+      return (data ?? []) as FeatureFlag[];
     },
   });
 
-  const { data: clientInvites } = useQuery({
+  const { data: clientInvites } = useQuery<ClientInvite[]>({
     queryKey: ["client-invites"],
     queryFn: async () => {
       const { data } = await supabase
         .from("client_invites")
         .select("*")
         .order("created_at", { ascending: false });
-      return data ?? [];
+      return (data ?? []) as ClientInvite[];
     },
   });
 
@@ -153,9 +154,9 @@ export default function AdminSettings() {
       };
       const existing = tenantSettings?.id;
       if (existing) {
-        await supabase.from("tenant_settings").update(payload).eq("id", existing);
+        await supabase.from("tenant_settings").update(payload satisfies TenantSettingsPatch).eq("id", existing);
       } else {
-        await supabase.from("tenant_settings").insert(payload as any);
+        await supabase.from("tenant_settings").insert({ tenant_key: "default", brand_name: payload.brand_name ?? "Studio", support_email: payload.support_email } satisfies TenantSettingsInsert);
       }
       qc.invalidateQueries({ queryKey: ["tenant-settings"] });
       toast({ title: "Settings saved" });
@@ -175,13 +176,18 @@ export default function AdminSettings() {
     setInviteSending(true);
     try {
       const token = crypto.randomUUID();
-      await supabase.from("client_invites").insert({
+      const invite: ClientInviteInsert = {
         email: inviteEmail,
         token,
         role: inviteRole,
         status: "pending",
+        project_id: 0,
+        first_name: "",
+        last_name: "",
+        created_by: "admin",
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      } as any);
+      };
+      await supabase.from("client_invites").insert(invite);
       qc.invalidateQueries({ queryKey: ["client-invites"] });
       const inviteLink = `${window.location.origin}/accept-invite/${token}`;
       await navigator.clipboard.writeText(inviteLink).catch(() => {});
@@ -373,7 +379,7 @@ export default function AdminSettings() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {(users ?? []).map((u: any) => (
+                  {(users ?? []).map((u: Profile) => (
                     <tr key={u.id} className="hover:bg-muted/30">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
@@ -418,13 +424,13 @@ export default function AdminSettings() {
           )}
 
           {/* Pending invites */}
-          {(clientInvites ?? []).filter((i: any) => i.status === "pending").length > 0 && (
+          {(clientInvites ?? []).filter((i: ClientInvite) => i.status === "pending").length > 0 && (
             <div>
               <h3 className="text-sm font-semibold text-foreground mb-3">Pending Invites</h3>
               <div className="space-y-2">
                 {(clientInvites ?? [])
-                  .filter((i: any) => i.status === "pending")
-                  .map((inv: any) => (
+                  .filter((i: ClientInvite) => i.status === "pending")
+                  .map((inv: ClientInvite) => (
                     <div key={inv.id} className="flex items-center justify-between p-3 rounded-lg border border-border bg-card">
                       <div className="flex items-center gap-3">
                         <Mail className="h-4 w-4 text-muted-foreground" />
@@ -436,12 +442,12 @@ export default function AdminSettings() {
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary" className="text-[10px]">Pending</Badge>
                         <button
-                          onClick={() => handleCopyInviteLink(inv.token, inv.id)}
+                          onClick={() => handleCopyInviteLink(inv.token, String(inv.id))}
                           className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                           title="Copy invite link"
                         >
-                          {copiedId === inv.id ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
-                          {copiedId === inv.id ? "Copied" : "Copy link"}
+                          {copiedId === String(inv.id) ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
+                          {copiedId === String(inv.id) ? "Copied" : "Copy link"}
                         </button>
                       </div>
                     </div>
@@ -462,10 +468,10 @@ export default function AdminSettings() {
               {(featureFlags ?? []).length === 0 ? (
                 <p className="text-sm text-muted-foreground py-4 text-center">No feature flags configured</p>
               ) : (
-                (featureFlags ?? []).map((flag: any) => (
+                (featureFlags ?? []).map((flag: FeatureFlag) => (
                   <div key={flag.id} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
                     <div>
-                      <p className="text-sm font-medium text-foreground font-mono">{flag.key}</p>
+                      <p className="text-sm font-medium text-foreground font-mono">{flag.flag_key}</p>
                       {flag.description && <p className="text-xs text-muted-foreground mt-0.5">{flag.description}</p>}
                     </div>
                     <Switch

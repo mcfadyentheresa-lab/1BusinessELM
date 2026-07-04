@@ -1,6 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
-import type { Json, Photo, PlanningBoard } from "@/shared/database.types";
+import type { Json, Photo, PlanningBoard, BoardSnapshot } from "@/shared/database.types";
+import type {
+  PlanningBoardPatch,
+  MilestonePatch,
+  SubMilestonePatch,
+  CalendarEventPatch,
+  ProjectPatch,
+  BoardSnapshotPatch,
+} from "@/lib/mappers";
 
 // ── Planning Board CRUD ────────────────────────────────────────────────────
 
@@ -40,8 +48,7 @@ export function useUpdatePlanningBoard() {
     }) => {
       const { data, error } = await supabase
         .from("planning_boards")
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .update(patch as any)
+        .update(patch as PlanningBoardPatch)
         .eq("id", id)
         .select()
         .single();
@@ -135,7 +142,7 @@ export function useUpdateMilestone() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, projectId, ...patch }: { id: number; projectId: number; completed?: boolean; title?: string; date?: string; color_hex?: string }) => {
-      const { error } = await supabase.from("milestones").update(patch as any).eq("id", id);
+      const { error } = await supabase.from("milestones").update(patch as MilestonePatch).eq("id", id);
       if (error) throw error;
     },
     onSuccess: (_data, vars) => {
@@ -179,7 +186,7 @@ export function useUpdateSubMilestone() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, projectId, ...patch }: { id: number; projectId: number; completed?: boolean; title?: string }) => {
-      const { error } = await supabase.from("sub_milestones").update(patch as any).eq("id", id);
+      const { error } = await supabase.from("sub_milestones").update(patch as SubMilestonePatch).eq("id", id);
       if (error) throw error;
     },
     onSuccess: (_data, vars) => {
@@ -266,7 +273,7 @@ export function useUpdateCalendarEvent() {
     mutationFn: async ({ id, projectId, ...patch }: { id: number; projectId: number; title?: string; date?: string; type?: string }) => {
       const { data, error } = await supabase
         .from("calendar_events")
-        .update(patch as any)
+        .update(patch as CalendarEventPatch)
         .eq("id", id)
         .select()
         .single();
@@ -428,7 +435,7 @@ export function useUpdateProjectCover() {
       const url = urlData.publicUrl;
       const { error: updateError } = await supabase
         .from("projects")
-        .update({ thumbnail_url: url } as any)
+        .update({ thumbnail_url: url } satisfies ProjectPatch)
         .eq("id", projectId);
       if (updateError) throw updateError;
       return { url };
@@ -446,7 +453,7 @@ export function useRemoveProjectCover() {
     mutationFn: async ({ projectId }: { projectId: number }) => {
       const { error } = await supabase
         .from("projects")
-        .update({ thumbnail_url: null } as any)
+        .update({ thumbnail_url: null } satisfies ProjectPatch)
         .eq("id", projectId);
       if (error) throw error;
     },
@@ -471,7 +478,7 @@ export function useUpdateFocalPoint() {
     }) => {
       const { error } = await supabase
         .from("projects")
-        .update({ hero_focal_x: focalX, hero_focal_y: focalY } as any)
+        .update({ hero_focal_x: focalX, hero_focal_y: focalY } satisfies ProjectPatch)
         .eq("id", projectId);
       if (error) throw error;
     },
@@ -484,14 +491,8 @@ export function useUpdateFocalPoint() {
 
 // ── Board Snapshots ────────────────────────────────────────────────────────
 
-export interface BoardSnapshot {
-  id: number;
-  board_id: number;
-  name: string;
-  canvas_data: unknown;
-  created_by: string | null;
-  created_at: string | null;
-}
+// Re-export the canonical Row type so callers can import from here.
+export type { BoardSnapshot };
 
 export function useBoardSnapshots(boardId: number) {
   return useQuery<BoardSnapshot[]>({
@@ -515,7 +516,7 @@ export function useCreateBoardSnapshot() {
     mutationFn: async ({ boardId, name, canvasData }: { boardId: number; name: string; canvasData: unknown }) => {
       const { data, error } = await supabase
         .from("board_snapshots")
-        .insert({ board_id: boardId, name, canvas_data: canvasData as import("@/shared/database.types").Json })
+        .insert({ board_id: boardId, name, canvas_data: canvasData as Json })
         .select()
         .single();
       if (error) throw error;
@@ -533,7 +534,7 @@ export function useRestoreBoardSnapshot() {
     mutationFn: async ({ id, boardId, canvasData }: { id: number; boardId: number; canvasData: unknown }) => {
       const { error } = await supabase
         .from("planning_boards")
-        .update({ canvas_data: canvasData } as any)
+        .update({ canvas_data: canvasData as Json } satisfies PlanningBoardPatch)
         .eq("id", boardId);
       if (error) throw error;
       return { id, boardId };
@@ -562,7 +563,7 @@ export function useRenameBoardSnapshot() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, boardId, name }: { id: number; boardId: number; name: string }) => {
-      const { error } = await supabase.from("board_snapshots").update({ name } as any).eq("id", id);
+      const { error } = await supabase.from("board_snapshots").update({ name } satisfies BoardSnapshotPatch).eq("id", id);
       if (error) throw error;
     },
     onSuccess: (_data, vars) => {

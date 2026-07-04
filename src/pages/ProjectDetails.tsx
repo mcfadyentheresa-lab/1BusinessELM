@@ -25,6 +25,20 @@ import {
   Trash2, X, Heart, Link as LinkIcon,
 } from "lucide-react";
 import PlanningBoard from "@/components/board/PlanningBoard";
+import type {
+  ProjectWithClient,
+  MilestoneWithSubs,
+  TaskWithAssignee,
+  MessageWithSender,
+  SiteVisitWithUser,
+  WishlistItemWithUser,
+  Photo,
+  Document,
+  Decision,
+  ChangeOrder,
+  Selection,
+  SubMilestone,
+} from "@/lib/mappers";
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   planning: { label: "Planning", color: "bg-amber-100 text-amber-800" },
@@ -62,7 +76,7 @@ export default function ProjectDetails() {
   const createSubMilestone = useCreateSubMilestone();
   const updateSubMilestone = useUpdateSubMilestone();
 
-  const { data: project, isLoading: projectLoading } = useQuery({
+  const { data: project, isLoading: projectLoading } = useQuery<ProjectWithClient | null>({
     queryKey: ["project", projectId],
     queryFn: async () => {
       const { data } = await supabase
@@ -70,11 +84,11 @@ export default function ProjectDetails() {
         .select("*, client:profiles!projects_client_id_fkey(name, email, avatar_url)")
         .eq("id", projectId)
         .maybeSingle();
-      return data;
+      return data as ProjectWithClient | null;
     },
   });
 
-  const { data: milestones } = useQuery({
+  const { data: milestones } = useQuery<MilestoneWithSubs[]>({
     queryKey: ["milestones", projectId],
     queryFn: async () => {
       const { data } = await supabase
@@ -82,11 +96,11 @@ export default function ProjectDetails() {
         .select("*, sub_milestones(*)")
         .eq("project_id", projectId)
         .order("order");
-      return data ?? [];
+      return (data ?? []) as unknown as MilestoneWithSubs[];
     },
   });
 
-  const { data: tasks } = useQuery({
+  const { data: tasks } = useQuery<TaskWithAssignee[]>({
     queryKey: ["tasks", projectId],
     queryFn: async () => {
       const { data } = await supabase
@@ -94,38 +108,38 @@ export default function ProjectDetails() {
         .select("*, assignee:profiles!tasks_assigned_to_fkey(name, avatar_url)")
         .eq("project_id", projectId)
         .order("order");
-      return data ?? [];
+      return (data ?? []) as unknown as TaskWithAssignee[];
     },
     enabled: activeTab === "overview" || activeTab === "tasks",
   });
 
-  const { data: photos } = useQuery({
+  const { data: photos } = useQuery<Photo[]>({
     queryKey: ["photos", projectId],
     queryFn: async () => {
       const { data } = await supabase
         .from("photos")
         .select("*")
         .eq("project_id", projectId)
-        .order("taken_at", { ascending: false });
-      return data ?? [];
+        .order("created_at", { ascending: false });
+      return (data ?? []) as Photo[];
     },
     enabled: activeTab === "files",
   });
 
-  const { data: documents } = useQuery({
+  const { data: documents } = useQuery<Document[]>({
     queryKey: ["documents", projectId],
     queryFn: async () => {
       const { data } = await supabase
         .from("documents")
         .select("*")
         .eq("project_id", projectId)
-        .order("uploaded_at", { ascending: false });
-      return data ?? [];
+        .order("created_at", { ascending: false });
+      return (data ?? []) as Document[];
     },
     enabled: activeTab === "files",
   });
 
-  const { data: messages } = useQuery({
+  const { data: messages } = useQuery<MessageWithSender[]>({
     queryKey: ["messages", projectId],
     queryFn: async () => {
       const { data } = await supabase
@@ -133,25 +147,25 @@ export default function ProjectDetails() {
         .select("*, sender:profiles!messages_sender_id_fkey(name, avatar_url)")
         .eq("project_id", projectId)
         .order("created_at");
-      return data ?? [];
+      return (data ?? []) as unknown as MessageWithSender[];
     },
     enabled: activeTab === "chat",
   });
 
-  const { data: decisions } = useQuery({
+  const { data: decisions } = useQuery<Decision[]>({
     queryKey: ["decisions", projectId],
     queryFn: async () => {
       const { data } = await supabase
         .from("decisions")
         .select("*")
         .eq("project_id", projectId)
-        .order("decided_at", { ascending: false });
-      return data ?? [];
+        .order("decided_on", { ascending: false });
+      return (data ?? []) as Decision[];
     },
     enabled: activeTab === "decisions",
   });
 
-  const { data: changeOrders } = useQuery({
+  const { data: changeOrders } = useQuery<ChangeOrder[]>({
     queryKey: ["change-orders", projectId],
     queryFn: async () => {
       const { data } = await supabase
@@ -159,25 +173,25 @@ export default function ProjectDetails() {
         .select("*")
         .eq("project_id", projectId)
         .order("created_at", { ascending: false });
-      return data ?? [];
+      return (data ?? []) as ChangeOrder[];
     },
     enabled: activeTab === "change-orders",
   });
 
-  const { data: siteVisits } = useQuery({
+  const { data: siteVisits } = useQuery<SiteVisitWithUser[]>({
     queryKey: ["site-visits", projectId],
     queryFn: async () => {
       const { data } = await supabase
         .from("site_visits")
         .select("*, user:profiles!site_visits_user_id_fkey(name)")
         .eq("project_id", projectId)
-        .order("visit_date", { ascending: false });
-      return data ?? [];
+        .order("visited_on", { ascending: false });
+      return (data ?? []) as unknown as SiteVisitWithUser[];
     },
     enabled: activeTab === "site-visits",
   });
 
-  const { data: selections } = useQuery({
+  const { data: selections } = useQuery<Selection[]>({
     queryKey: ["selections", projectId],
     queryFn: async () => {
       const { data } = await supabase
@@ -185,12 +199,12 @@ export default function ProjectDetails() {
         .select("*")
         .eq("project_id", projectId)
         .order("created_at", { ascending: false });
-      return data ?? [];
+      return (data ?? []) as Selection[];
     },
     enabled: activeTab === "selections",
   });
 
-  const { data: wishlistItems, isLoading: wishlistLoading } = useQuery({
+  const { data: wishlistItems, isLoading: wishlistLoading } = useQuery<WishlistItemWithUser[]>({
     queryKey: ["wishlist", projectId],
     queryFn: async () => {
       const { data } = await supabase
@@ -198,7 +212,7 @@ export default function ProjectDetails() {
         .select("*, user:profiles!project_wishlist_items_user_id_fkey(name, avatar_url)")
         .eq("project_id", projectId)
         .order("created_at", { ascending: false });
-      return data ?? [];
+      return (data ?? []) as unknown as WishlistItemWithUser[];
     },
     enabled: activeTab === "wishlist",
   });
@@ -280,7 +294,7 @@ export default function ProjectDetails() {
   const budgetPct = project.total_budget && project.budget_used
     ? Math.round((project.budget_used / project.total_budget) * 100)
     : 0;
-  const completedTasks = (tasks ?? []).filter((t: any) => t.status === "done").length;
+  const completedTasks = (tasks ?? []).filter((t: TaskWithAssignee) => t.status === "done").length;
   const totalTasks = (tasks ?? []).length;
 
   const isAdmin = user?.role === "admin";
@@ -472,7 +486,7 @@ export default function ProjectDetails() {
                     <p className="text-sm text-muted-foreground py-4 text-center">No tasks yet</p>
                   ) : (
                     <div className="space-y-1.5">
-                      {(tasks ?? []).slice(0, 10).map((task: any) => (
+                      {(tasks ?? []).slice(0, 10).map((task: TaskWithAssignee) => (
                         <div key={task.id} className="flex items-start gap-2.5 py-1.5 group">
                           <Checkbox
                             checked={task.status === "done"}
@@ -497,7 +511,7 @@ export default function ProjectDetails() {
             {/* Sidebar */}
             <div className="space-y-4">
               {/* Meta grid — 2-col info tiles */}
-              {(project.phase || project.start_date || project.end_date || (project as any).client?.name) && (
+              {(project.phase || project.start_date || project.end_date || project.client?.name) && (
                 <Card>
                   <CardContent className="p-4">
                     <div className="grid grid-cols-2 gap-3">
@@ -507,10 +521,10 @@ export default function ProjectDetails() {
                           <p className="text-sm font-medium text-foreground leading-snug">{project.phase.replace(/_/g, " ")}</p>
                         </div>
                       )}
-                      {(project as any).client?.name && (
+                      {project.client?.name && (
                         <div className="rounded-lg bg-muted/40 border border-border/50 p-3">
                           <p className="text-[9px] text-muted-foreground uppercase tracking-widest mb-1">Client</p>
-                          <p className="text-sm font-medium text-foreground leading-snug">{(project as any).client.name}</p>
+                          <p className="text-sm font-medium text-foreground leading-snug">{project.client.name}</p>
                         </div>
                       )}
                       {project.start_date && (
@@ -648,7 +662,7 @@ export default function ProjectDetails() {
               {/* Horizontal step strip */}
               <div className="rounded-xl border border-border bg-card p-5 overflow-x-auto">
                 <div className="flex items-start min-w-max gap-0">
-                  {(milestones ?? []).map((m: any, i: number) => (
+                  {(milestones ?? []).map((m: MilestoneWithSubs, i: number) => (
                     <div key={m.id} className="flex items-start flex-1 min-w-[120px]">
                       <div className="flex flex-col items-center flex-1">
                         <div className="flex items-center w-full">
@@ -681,7 +695,7 @@ export default function ProjectDetails() {
 
               {/* Detail cards */}
               <div className="space-y-3">
-                {(milestones ?? []).map((m: any, i: number) => (
+                {(milestones ?? []).map((m: MilestoneWithSubs, i: number) => (
                   <div key={m.id} className={cn(
                     "rounded-xl border bg-card transition-colors",
                     m.completed ? "border-primary/20 bg-primary/[0.02]" : "border-border"
@@ -730,7 +744,7 @@ export default function ProjectDetails() {
                     {/* Sub-milestones */}
                     {((m.sub_milestones ?? []).length > 0 || isAdmin) && (
                       <div className="border-t border-border mx-4 pt-3 pb-4 space-y-1.5 ml-[52px]">
-                        {(m.sub_milestones ?? []).map((sm: any) => (
+                        {(m.sub_milestones ?? []).map((sm: SubMilestone) => (
                           <div key={sm.id} className="flex items-center gap-2 group">
                             <button
                               type="button"
@@ -808,37 +822,21 @@ export default function ProjectDetails() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {(selections ?? []).map((sel: any) => (
+              {(selections ?? []).map((sel: Selection) => (
                 <Card key={sel.id} className="overflow-hidden hover:shadow-md transition-shadow">
-                  {sel.image_url && (
-                    <img src={sel.image_url} alt={sel.name} className="w-full h-40 object-cover" />
-                  )}
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <h3 className="font-semibold text-foreground text-sm">{sel.name}</h3>
+                        <h3 className="font-semibold text-foreground text-sm">{sel.item}</h3>
                         {sel.category && <p className="text-xs text-muted-foreground capitalize mt-0.5">{sel.category}</p>}
                       </div>
-                      <Badge variant={sel.approved ? "success" : "secondary"} className="text-[10px] shrink-0">
-                        {sel.approved ? "Approved" : "Pending"}
+                      <Badge variant="secondary" className="text-[10px] shrink-0">
+                        {sel.status}
                       </Badge>
                     </div>
-                    {sel.supplier_name && <p className="text-xs text-muted-foreground mt-2">{sel.supplier_name}</p>}
-                    {sel.unit_price && (
-                      <p className="text-sm font-semibold mt-2 tabular-nums" style={{ fontFamily: "var(--font-mono)" }}>
-                        {formatCurrency(parseFloat(sel.unit_price))}
-                      </p>
-                    )}
-                    {sel.product_url && (
-                      <a
-                        href={sel.product_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-xs text-primary mt-2 hover:underline"
-                      >
-                        View product <ExternalLink className="h-3 w-3" />
-                      </a>
-                    )}
+                    {sel.vendor && <p className="text-xs text-muted-foreground mt-2">{sel.vendor}</p>}
+                    {sel.product && <p className="text-sm font-medium mt-1">{sel.product}</p>}
+                    {sel.notes && <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{sel.notes}</p>}
                   </CardContent>
                 </Card>
               ))}
@@ -964,7 +962,7 @@ export default function ProjectDetails() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {(wishlistItems ?? []).map((item: any) => (
+              {(wishlistItems ?? []).map((item: WishlistItemWithUser) => (
                 <div key={item.id} className="group rounded-xl border border-border bg-card overflow-hidden hover:shadow-md hover:border-primary/20 transition-all">
                   {item.image_url && (
                     <div className="relative overflow-hidden h-40 bg-muted">
@@ -1043,22 +1041,22 @@ export default function ProjectDetails() {
             </div>
           ) : (
             <div className="space-y-3">
-              {(decisions ?? []).map((d: any) => (
+              {(decisions ?? []).map((d: Decision) => (
                 <div key={d.id} className="rounded-xl border border-border bg-card p-4 hover:shadow-sm transition-shadow">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <h3 className="font-semibold text-foreground">{d.title}</h3>
-                      {d.description && <p className="text-sm text-muted-foreground mt-1">{d.description}</p>}
-                      {d.outcome && (
+                      {d.context && <p className="text-sm text-muted-foreground mt-1">{d.context}</p>}
+                      {d.decision && (
                         <div className="mt-2 rounded-lg bg-muted/60 p-2.5">
-                          <p className="text-xs font-medium text-foreground">Outcome</p>
-                          <p className="text-sm text-foreground mt-0.5">{d.outcome}</p>
+                          <p className="text-xs font-medium text-foreground">Decision</p>
+                          <p className="text-sm text-foreground mt-0.5">{d.decision}</p>
                         </div>
                       )}
                     </div>
                     <div className="text-right shrink-0">
                       <Badge variant="outline" className="text-[10px]">{d.category ?? "General"}</Badge>
-                      {d.decided_at && <p className="text-xs text-muted-foreground mt-1">{formatDate(d.decided_at)}</p>}
+                      {d.decided_on && <p className="text-xs text-muted-foreground mt-1">{formatDate(d.decided_on)}</p>}
                     </div>
                   </div>
                 </div>
@@ -1079,12 +1077,12 @@ export default function ProjectDetails() {
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
-                {(photos ?? []).map((photo: any) => (
+                {(photos ?? []).map((photo: Photo) => (
                   <div key={photo.id} className="group relative aspect-square rounded-lg overflow-hidden bg-muted">
                     <img src={photo.url} alt={photo.caption ?? ""} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                    {photo.is_hero && (
+                    {photo.is_showcase && (
                       <div className="absolute top-1 right-1">
-                        <Badge variant="secondary" className="text-[9px] px-1 py-0">Hero</Badge>
+                        <Badge variant="secondary" className="text-[9px] px-1 py-0">Showcase</Badge>
                       </div>
                     )}
                   </div>
@@ -1105,7 +1103,7 @@ export default function ProjectDetails() {
               </div>
             ) : (
               <div className="space-y-2">
-                {(documents ?? []).map((doc: any) => (
+                {(documents ?? []).map((doc: Document) => (
                   <a
                     key={doc.id}
                     href={doc.url}
@@ -1115,8 +1113,8 @@ export default function ProjectDetails() {
                   >
                     <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{doc.name}</p>
-                      {doc.uploaded_at && <p className="text-xs text-muted-foreground">{formatDate(doc.uploaded_at)}</p>}
+                    <p className="text-sm font-medium text-foreground truncate">{doc.title}</p>
+                      {doc.created_at && <p className="text-xs text-muted-foreground">{formatDate(doc.created_at)}</p>}
                     </div>
                     <ExternalLink className="h-4 w-4 text-muted-foreground shrink-0" />
                   </a>
@@ -1135,7 +1133,7 @@ export default function ProjectDetails() {
             </div>
           ) : (
             <div className="space-y-3">
-              {(changeOrders ?? []).map((co: any) => (
+              {(changeOrders ?? []).map((co: ChangeOrder) => (
                 <div key={co.id} className="rounded-xl border border-border bg-card p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
@@ -1151,10 +1149,10 @@ export default function ProjectDetails() {
                       {co.description && <p className="text-sm text-muted-foreground">{co.description}</p>}
                     </div>
                     <div className="text-right shrink-0">
-                      {co.cost_delta != null && (
-                        <p className={cn("text-sm font-bold tabular-nums", co.cost_delta >= 0 ? "text-amber-600" : "text-green-600")}
+                      {co.amount && (
+                        <p className="text-sm font-bold tabular-nums text-amber-600"
                           style={{ fontFamily: "var(--font-mono)" }}>
-                          {co.cost_delta >= 0 ? "+" : ""}{formatCurrency(Math.abs(co.cost_delta))}
+                          {formatCurrency(parseFloat(co.amount))}
                         </p>
                       )}
                       {co.created_at && <p className="text-xs text-muted-foreground mt-1">{formatDate(co.created_at)}</p>}
@@ -1175,12 +1173,12 @@ export default function ProjectDetails() {
             </div>
           ) : (
             <div className="space-y-3">
-              {(siteVisits ?? []).map((sv: any) => (
+              {(siteVisits ?? []).map((sv: SiteVisitWithUser) => (
                 <div key={sv.id} className="rounded-xl border border-border bg-card p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <p className="font-semibold text-foreground">{formatDate(sv.visit_date)}</p>
+                        <p className="font-semibold text-foreground">{formatDate(sv.visited_on)}</p>
                         {sv.user?.name && (
                           <span className="text-xs text-muted-foreground">by {sv.user.name}</span>
                         )}
@@ -1188,9 +1186,7 @@ export default function ProjectDetails() {
                       {sv.summary && <p className="text-sm text-muted-foreground">{sv.summary}</p>}
                       {sv.weather && <p className="text-xs text-muted-foreground mt-1">Weather: {sv.weather}</p>}
                     </div>
-                    {sv.crew_count != null && (
-                      <Badge variant="outline" className="text-[10px] shrink-0">{sv.crew_count} crew</Badge>
-                    )}
+                    <Badge variant="outline" className="text-[10px] shrink-0">{sv.visit_type}</Badge>
                   </div>
                 </div>
               ))}
@@ -1207,7 +1203,7 @@ export default function ProjectDetails() {
                 <p className="text-muted-foreground">No messages yet — start the conversation</p>
               </div>
             ) : (
-              (messages ?? []).map((msg: any) => {
+              (messages ?? []).map((msg: MessageWithSender) => {
                 const isOwn = msg.sender_id === user?.id;
                 return (
                   <div key={msg.id} className={cn("flex gap-3", isOwn && "flex-row-reverse")}>

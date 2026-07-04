@@ -605,7 +605,7 @@ function CritiqueTab({ boardId, projectId, hasClient, digest }: CritiqueTabProps
       const res = await fetch(`${FN_BASE}/design-critique`, {
         method: "POST",
         headers: await authHeaders(),
-        body: JSON.stringify({ boardId, focus: "all", ...digest }),
+        body: JSON.stringify({ focus: "all", ...digest }),
       });
       if (!res.ok) {
         let detail = "Critique failed";
