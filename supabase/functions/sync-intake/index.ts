@@ -30,15 +30,15 @@ Deno.serve(async (req: Request) => {
   try {
     // Connect to the Front Door shared project using server-side secrets
     const frontDoorUrl = Deno.env.get("FRONT_DOOR_SUPABASE_URL");
-    const frontDoorKey = Deno.env.get("FRONT_DOOR_SERVICE_ROLE_KEY");
-    if (!frontDoorUrl || !frontDoorKey) {
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!frontDoorUrl || !serviceRoleKey) {
       return new Response(
-        JSON.stringify({ error: "FRONT_DOOR_SUPABASE_URL or FRONT_DOOR_SERVICE_ROLE_KEY not configured" }),
+        JSON.stringify({ error: "FRONT_DOOR_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    const db = createClient(frontDoorUrl, frontDoorKey);
+    const db = createClient(frontDoorUrl, serviceRoleKey);
 
     // Resolve caller's user_id from the ELM JWT
     let userId: string | null = null;
@@ -46,7 +46,7 @@ Deno.serve(async (req: Request) => {
     if (authHeader?.startsWith("Bearer ")) {
       const elmClient = createClient(
         Deno.env.get("SUPABASE_URL")!,
-        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        serviceRoleKey,
       );
       const { data } = await elmClient.auth.getUser(authHeader.slice(7));
       userId = data.user?.id ?? null;
