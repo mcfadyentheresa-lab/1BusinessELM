@@ -171,7 +171,7 @@ function NewPlanDialog({ open, onClose }: { open: boolean; onClose: () => void }
         style_direction: styleDirection.trim() || null,
         notes: notes.trim() || null,
         status: "draft",
-      });
+      } as any);
       if (error) throw error;
     },
     onSuccess: () => {

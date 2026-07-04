@@ -71,9 +71,9 @@ export function PresentationMode({ projectId, boardId, onClose }: PresentationMo
       const { data } = await supabase
         .from("board_items")
         .select("*")
-        .eq("board_id", board!.id)
-        .order("position_y");
-      return (data ?? []) as BoardItem[];
+        .eq("project_id", board!.id)
+        .order("created_at");
+      return (data ?? []) as unknown as BoardItem[];
     },
     enabled: !!board?.id,
   });
@@ -85,7 +85,6 @@ export function PresentationMode({ projectId, boardId, onClose }: PresentationMo
         .from("selections")
         .select("*")
         .eq("project_id", projectId)
-        .eq("approved", true)
         .order("category");
       return data ?? [];
     },
@@ -97,8 +96,7 @@ export function PresentationMode({ projectId, boardId, onClose }: PresentationMo
       const { data } = await supabase
         .from("paint_colors")
         .select("*")
-        .eq("project_id", projectId)
-        .order("created_at");
+        .order("name");
       return data ?? [];
     },
   });
@@ -163,7 +161,7 @@ export function PresentationMode({ projectId, boardId, onClose }: PresentationMo
     try {
       const token = crypto.randomUUID();
       const { error } = await supabase.from("board_presentation_tokens").insert({
-        board_id: board?.id,
+        board_id: board!.id,
         token,
         expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       });

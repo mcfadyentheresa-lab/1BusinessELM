@@ -6,12 +6,18 @@ interface Collaborator {
   userId: string;
   name: string;
   color: string;
+  profileImageUrl?: string;
+  firstName?: string;
+  lastName?: string;
 }
 
 interface CursorPosition {
   userId: string;
   x: number;
   y: number;
+  color?: string;
+  firstName?: string;
+  lastName?: string;
 }
 
 const COLORS = ["#e57373", "#64b5f6", "#81c784", "#ffb74d", "#ce93d8", "#4db6ac"];
@@ -19,7 +25,7 @@ const COLORS = ["#e57373", "#64b5f6", "#81c784", "#ffb74d", "#ce93d8", "#4db6ac"
 export function useBoardRealtime(boardId: number | null, user: { id: string; name?: string } | null) {
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [cursors, setCursors] = useState<Record<string, CursorPosition>>({});
-  const [activeEdits, setActiveEdits] = useState<Record<string, number>>({});
+  const [activeEdits, setActiveEdits] = useState<Record<string, { elementId: number; color?: string; firstName?: string; lastName?: string }>>({});
   const colorMapRef = useRef<Record<string, string>>({});
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 

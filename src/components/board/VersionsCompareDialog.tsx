@@ -130,7 +130,7 @@ export function VersionsCompareDialog({
   const [zoom, setZoom] = useState(0.08);
   const [pan] = useState({ x: 0, y: 0 });
 
-  const snapshotsArr = snapshots ?? [];
+  const snapshotsArr: BoardSnapshot[] = (snapshots ?? []) as BoardSnapshot[];
   const leftSnap = snapshotsArr[leftIdx];
   const leftElements = leftSnap ? parseBoardElements(leftSnap) : [];
 

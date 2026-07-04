@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
-import type { Photo, PlanningBoard } from "@/shared/database.types";
+import type { Json, Photo, PlanningBoard } from "@/shared/database.types";
 
 // ── Planning Board CRUD ────────────────────────────────────────────────────
 
@@ -25,10 +25,23 @@ export function useCreatePlanningBoard() {
 export function useUpdatePlanningBoard() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, projectId, ...patch }: { id: number; projectId: number; name?: string; canvas_data?: unknown }) => {
+    mutationFn: async ({ id, projectId, notifyUsers: _notify, ...patch }: {
+      id: number;
+      projectId?: number;
+      name?: string;
+      canvas_data?: Json;
+      linked_milestone_id?: number | null;
+      linked_checklist_item_id?: number | null;
+      linked_calendar_event_id?: number | null;
+      linked_user_ids?: string[] | null;
+      linked_project_ids?: number[] | null;
+      color_tag_id?: number | null;
+      notifyUsers?: boolean;
+    }) => {
       const { data, error } = await supabase
         .from("planning_boards")
-        .update(patch)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .update(patch as any)
         .eq("id", id)
         .select()
         .single();
@@ -36,7 +49,9 @@ export function useUpdatePlanningBoard() {
       return data;
     },
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["planning-boards", vars.projectId] });
+      if (vars.projectId) {
+        qc.invalidateQueries({ queryKey: ["planning-boards", vars.projectId] });
+      }
     },
   });
 }
@@ -120,7 +135,7 @@ export function useUpdateMilestone() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, projectId, ...patch }: { id: number; projectId: number; completed?: boolean; title?: string; date?: string; color_hex?: string }) => {
-      const { error } = await supabase.from("milestones").update(patch).eq("id", id);
+      const { error } = await supabase.from("milestones").update(patch as any).eq("id", id);
       if (error) throw error;
     },
     onSuccess: (_data, vars) => {
@@ -164,7 +179,7 @@ export function useUpdateSubMilestone() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, projectId, ...patch }: { id: number; projectId: number; completed?: boolean; title?: string }) => {
-      const { error } = await supabase.from("sub_milestones").update(patch).eq("id", id);
+      const { error } = await supabase.from("sub_milestones").update(patch as any).eq("id", id);
       if (error) throw error;
     },
     onSuccess: (_data, vars) => {
@@ -197,7 +212,7 @@ export function useCreateChecklistItem() {
     mutationFn: async ({ projectId, text }: { projectId: number; text: string }) => {
       const { data, error } = await supabase
         .from("checklist_items")
-        .insert({ project_id: projectId, text, completed: false })
+        .insert({ project_id: projectId, title: text, completed: false })
         .select()
         .single();
       if (error) throw error;
@@ -251,7 +266,7 @@ export function useUpdateCalendarEvent() {
     mutationFn: async ({ id, projectId, ...patch }: { id: number; projectId: number; title?: string; date?: string; type?: string }) => {
       const { data, error } = await supabase
         .from("calendar_events")
-        .update(patch)
+        .update(patch as any)
         .eq("id", id)
         .select()
         .single();
@@ -413,7 +428,7 @@ export function useUpdateProjectCover() {
       const url = urlData.publicUrl;
       const { error: updateError } = await supabase
         .from("projects")
-        .update({ thumbnail_url: url })
+        .update({ thumbnail_url: url } as any)
         .eq("id", projectId);
       if (updateError) throw updateError;
       return { url };
@@ -431,7 +446,7 @@ export function useRemoveProjectCover() {
     mutationFn: async ({ projectId }: { projectId: number }) => {
       const { error } = await supabase
         .from("projects")
-        .update({ thumbnail_url: null })
+        .update({ thumbnail_url: null } as any)
         .eq("id", projectId);
       if (error) throw error;
     },
@@ -456,7 +471,7 @@ export function useUpdateFocalPoint() {
     }) => {
       const { error } = await supabase
         .from("projects")
-        .update({ hero_focal_x: focalX, hero_focal_y: focalY })
+        .update({ hero_focal_x: focalX, hero_focal_y: focalY } as any)
         .eq("id", projectId);
       if (error) throw error;
     },
@@ -475,7 +490,7 @@ export interface BoardSnapshot {
   name: string;
   canvas_data: unknown;
   created_by: string | null;
-  created_at: string;
+  created_at: string | null;
 }
 
 export function useBoardSnapshots(boardId: number) {
@@ -500,7 +515,7 @@ export function useCreateBoardSnapshot() {
     mutationFn: async ({ boardId, name, canvasData }: { boardId: number; name: string; canvasData: unknown }) => {
       const { data, error } = await supabase
         .from("board_snapshots")
-        .insert({ board_id: boardId, name, canvas_data: canvasData })
+        .insert({ board_id: boardId, name, canvas_data: canvasData as import("@/shared/database.types").Json })
         .select()
         .single();
       if (error) throw error;
@@ -518,7 +533,7 @@ export function useRestoreBoardSnapshot() {
     mutationFn: async ({ id, boardId, canvasData }: { id: number; boardId: number; canvasData: unknown }) => {
       const { error } = await supabase
         .from("planning_boards")
-        .update({ canvas_data: canvasData })
+        .update({ canvas_data: canvasData } as any)
         .eq("id", boardId);
       if (error) throw error;
       return { id, boardId };
@@ -547,7 +562,7 @@ export function useRenameBoardSnapshot() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, boardId, name }: { id: number; boardId: number; name: string }) => {
-      const { error } = await supabase.from("board_snapshots").update({ name }).eq("id", id);
+      const { error } = await supabase.from("board_snapshots").update({ name } as any).eq("id", id);
       if (error) throw error;
     },
     onSuccess: (_data, vars) => {

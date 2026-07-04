@@ -32,7 +32,7 @@ export default function CalendarPanel({ projectId, compact }: CalendarPanelProps
         .eq("project_id", projectId)
         .order("date");
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []) as CalendarEvent[];
     },
     enabled: !!projectId,
   });

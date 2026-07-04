@@ -76,8 +76,7 @@ export default function MasterCalendar() {
         title: form.title,
         date: form.date,
         type: form.type,
-        notes: form.notes || null,
-      });
+      } as any);
       if (error) throw error;
     },
     onSuccess: () => {

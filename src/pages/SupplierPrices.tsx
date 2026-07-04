@@ -309,7 +309,7 @@ function ReceiptScanDialog({
             material_id: item._matchId,
             unit_price: String(item.unit_price),
             notes: `Receipt scan — ${today}`,
-          });
+          } as any);
         } else {
           // Insert new
           await supabase.from("supplier_prices").insert({
@@ -320,7 +320,7 @@ function ReceiptScanDialog({
             supplier_id: supplierId,
             notes: item.notes || null,
             last_updated: today,
-          });
+          } as any);
         }
       }
       toast({ title: `${selected.length} item${selected.length > 1 ? "s" : ""} updated` });
@@ -537,7 +537,7 @@ function MaterialsTab({
         .from("supplier_prices")
         .select("*, supplier:suppliers(id,name,is_preferred), category:cost_categories(name)")
         .order("product_name", { ascending: true });
-      return (data ?? []) as Material[];
+      return (data ?? []) as unknown as Material[];
     },
   });
 
@@ -557,7 +557,7 @@ function MaterialsTab({
         product_url: form.product_url || null,
         notes: form.notes || null,
         last_updated: new Date().toISOString().slice(0, 10),
-      });
+      } as any);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -1066,7 +1066,7 @@ function AssembliesTab({ suppliers }: { suppliers: Supplier[] }) {
         .select("*, category:cost_categories(name), assembly_materials(*)")
         .eq("is_active", true)
         .order("name");
-      return (data ?? []) as Assembly[];
+      return (data ?? []) as unknown as Assembly[];
     },
   });
 
@@ -1189,7 +1189,7 @@ function AddAssemblyDialog({
       } else {
         const { error } = await supabase.from("estimate_assemblies").update({
           name, description: description || null, notes: notes || null, quality_tier: tier, updated_at: new Date().toISOString(),
-        }).eq("id", assemblyId);
+        } as any).eq("id", assemblyId);
         if (error) throw error;
         await supabase.from("assembly_materials").delete().eq("assembly_id", assemblyId);
       }

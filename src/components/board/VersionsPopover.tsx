@@ -62,7 +62,7 @@ export function VersionsPopover({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
 
-  const snapshotsArr = snapshots ?? [];
+  const snapshotsArr: BoardSnapshot[] = (snapshots ?? []) as BoardSnapshot[];
 
   const handleSave = async () => {
     const name = saveName.trim() || `Version ${snapshotsArr.length + 1}`;
@@ -174,7 +174,7 @@ export function VersionsPopover({
                         <>
                           <p className="text-xs font-medium truncate text-foreground">{snap.name}</p>
                           <p className="text-[10px] text-muted-foreground">
-                            {formatDistanceToNow(new Date(snap.created_at), { addSuffix: true })}
+                            {snap.created_at ? formatDistanceToNow(new Date(snap.created_at), { addSuffix: true }) : ""}
                           </p>
                         </>
                       )}

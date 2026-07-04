@@ -86,7 +86,7 @@ export default function AdminSettings() {
       if (existing) {
         await supabase.from("tenant_settings").update({ hero_image_url: heroUrl }).eq("id", existing);
       } else {
-        await supabase.from("tenant_settings").insert({ hero_image_url: heroUrl });
+        await supabase.from("tenant_settings").insert({ hero_image_url: heroUrl } as any);
       }
       qc.invalidateQueries({ queryKey: ["tenant-settings"] });
       toast({ title: "Hero image updated" });
@@ -155,7 +155,7 @@ export default function AdminSettings() {
       if (existing) {
         await supabase.from("tenant_settings").update(payload).eq("id", existing);
       } else {
-        await supabase.from("tenant_settings").insert(payload);
+        await supabase.from("tenant_settings").insert(payload as any);
       }
       qc.invalidateQueries({ queryKey: ["tenant-settings"] });
       toast({ title: "Settings saved" });
@@ -181,7 +181,7 @@ export default function AdminSettings() {
         role: inviteRole,
         status: "pending",
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      });
+      } as any);
       qc.invalidateQueries({ queryKey: ["client-invites"] });
       const inviteLink = `${window.location.origin}/accept-invite/${token}`;
       await navigator.clipboard.writeText(inviteLink).catch(() => {});

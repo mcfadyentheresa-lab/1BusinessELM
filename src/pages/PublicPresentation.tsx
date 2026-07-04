@@ -19,7 +19,7 @@ export default function PublicPresentation() {
         .select("*, board:planning_boards(id, title, project_id)")
         .eq("token", token)
         .maybeSingle();
-      return data;
+      return data as (typeof data & { board?: { id: number; title: string; project_id: number } | null }) | null;
     },
   });
 
@@ -45,7 +45,6 @@ export default function PublicPresentation() {
         .from("selections")
         .select("*")
         .eq("project_id", projectId!)
-        .eq("approved", true)
         .order("created_at");
       return data ?? [];
     },

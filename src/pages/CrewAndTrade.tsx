@@ -75,10 +75,10 @@ export default function CrewAndTrade() {
         is_active: true,
       };
       if (editingSub) {
-        const { error } = await supabase.from("subcontractors").update(payload).eq("id", editingSub.id);
+        const { error } = await supabase.from("subcontractors").update(payload as any).eq("id", editingSub.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("subcontractors").insert(payload);
+        const { error } = await supabase.from("subcontractors").insert(payload as any);
         if (error) throw error;
       }
     },

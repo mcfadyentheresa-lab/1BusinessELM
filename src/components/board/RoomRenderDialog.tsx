@@ -23,10 +23,15 @@ interface RoomRenderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   boardId: number;
+  projectId?: number;
+  roomName?: string | null;
+  roomZoneElementId?: number | null;
+  initialSourcePhotoUrl?: string | null;
+  onSourcePhotoUpdated?: (url: string) => void;
   onAccept?: (url: string) => void;
 }
 
-export function RoomRenderDialog({ open, onOpenChange, boardId, onAccept }: RoomRenderDialogProps) {
+export function RoomRenderDialog({ open, onOpenChange, boardId, projectId, roomName, roomZoneElementId, initialSourcePhotoUrl, onSourcePhotoUpdated, onAccept }: RoomRenderDialogProps) {
   const [mode, setMode] = useState<RenderMode>("restyle");
   const [prompt, setPrompt] = useState("");
   const [sourceFile, setSourceFile] = useState<File | null>(null);

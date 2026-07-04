@@ -180,7 +180,7 @@ function PaintColorPicker({
   const showLoading = isLoading || isFetching || allColors === undefined;
 
   const filteredColors = (allColors ?? []).filter((c) => {
-    if (family && c.colorFamily !== family) return false;
+    if (family && c.color_family !== family) return false;
     if (search.trim()) {
       const s = search.trim().toLowerCase();
       return c.name.toLowerCase().includes(s) || (c.code?.toLowerCase().includes(s) ?? false);
@@ -488,7 +488,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     queryFn: async () => {
       const { data, error } = await supabase.from("board_templates").select("id, name, description").order("name");
       if (error) throw error;
-      return (data ?? []).map((t) => ({ ...t, icon: "" }));
+      return (data ?? []).map((t) => ({ ...(t as object), icon: "" })) as any[];
     },
   });
   // User-saved templates have no shipped preview images. The picker renders
@@ -1082,7 +1082,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     const proj = (allProjects as any[]).find((p) => p.id === projectId);
     if (!proj) return;
     trackedBoardRef.current = selectedBoardId;
-    trackRecentProject({ id: proj.id, name: proj.name }, selectedBoardId);
+    trackRecentProject(proj.id, selectedBoardId);
   }, [selectedBoardId, projectId, allProjects, user?.role, trackRecentProject]);
 
   useEffect(() => {
@@ -1136,13 +1136,13 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     // be safe.
     cancelPendingSave();
     try {
-      const selectedTemplate = selectedTemplateId ? templateCatalogue.find((template) => template.id === selectedTemplateId) : null;
+      const templatesList = (templateCatalogue ?? []) as any[];
+      const selectedTemplate = selectedTemplateId ? templatesList.find((template) => template.id === selectedTemplateId) : null;
       const boardName = newBoardName.trim() || (selectedTemplate?.name || "Untitled Board");
       const boardResult = await createBoard({
         projectId,
         name: boardName,
         mode: newBoardMode,
-        ...(selectedTemplateId ? { templateId: selectedTemplateId } : {}),
       });
       const board = boardResult && typeof boardResult === "object" && "id" in boardResult ? boardResult : null;
       if (!board || !board.id) {
@@ -1172,12 +1172,12 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   const handleDeleteBoard = async () => {
     if (!selectedBoardId) return;
     const board = selectedBoard;
-    const shouldDeleteEvent = board?.linkedCalendarEventId && !(board.linkedMilestoneId || board.linkedChecklistItemId);
-    const eventIdToDelete = shouldDeleteEvent ? board.linkedCalendarEventId : null;
+    const shouldDeleteEvent = board?.linked_calendar_event_id && !(board.linked_milestone_id || board.linked_checklist_item_id);
+    const eventIdToDelete = shouldDeleteEvent ? board.linked_calendar_event_id : null;
     await deleteBoard({ id: selectedBoardId, projectId });
     if (eventIdToDelete) {
       try {
-        await deleteCalendarEvent(eventIdToDelete);
+        await deleteCalendarEvent({ id: eventIdToDelete, projectId });
       } catch {}
     }
     setShowDeleteConfirm(false);
@@ -1196,13 +1196,13 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     for (const id of boardsToDelete) {
       const board = boards.find((b: any) => b.id === id);
       if (!board) continue;
-      const shouldDeleteEvent = board.linkedCalendarEventId && !(board.linkedMilestoneId || board.linkedChecklistItemId);
-      const eventIdToDelete = shouldDeleteEvent ? board.linkedCalendarEventId : null;
+      const shouldDeleteEvent = board.linked_calendar_event_id && !(board.linked_milestone_id || board.linked_checklist_item_id);
+      const eventIdToDelete = shouldDeleteEvent ? board.linked_calendar_event_id : null;
       try {
         await deleteBoard({ id, projectId });
         deleted++;
         if (eventIdToDelete) {
-          try { await deleteCalendarEvent(eventIdToDelete); } catch {}
+          try { await deleteCalendarEvent({ id: eventIdToDelete, projectId }); } catch {}
         }
       } catch {
         failed++;
@@ -1222,10 +1222,19 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     }
   };
 
+  const BOARD_FIELD_MAP: Record<string, string> = {
+    linkedMilestoneId: "linked_milestone_id",
+    linkedChecklistItemId: "linked_checklist_item_id",
+    linkedCalendarEventId: "linked_calendar_event_id",
+    linkedUserIds: "linked_user_ids",
+    linkedProjectIds: "linked_project_ids",
+  };
+
   const handleLinkUpdate = async (field: string, value: any, extraFields?: Record<string, any>) => {
     if (!selectedBoardId) return;
+    const dbField = BOARD_FIELD_MAP[field] ?? field;
     try {
-      await updateBoard({ id: selectedBoardId, [field]: value, ...extraFields } as any);
+      await updateBoard({ id: selectedBoardId, [dbField]: value, ...extraFields });
       queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'planning-boards'] });
     } catch {
       toast({ title: "Error", description: "Failed to update link.", variant: "destructive" });
@@ -1236,7 +1245,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     if (!selectedBoardId || !newMilestoneTitle.trim()) return;
     try {
       const result = await createMilestone({ projectId, title: newMilestoneTitle.trim() });
-      await updateBoard({ id: selectedBoardId, linkedMilestoneId: result.id } as any);
+      await updateBoard({ id: selectedBoardId, linked_milestone_id: result.id });
       queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'planning-boards'] });
       queryClient.invalidateQueries({ queryKey: [buildUrl(api.milestones.list.path, { projectId }), projectId] });
       setNewMilestoneTitle("");
@@ -1250,8 +1259,8 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   const handleCreateAndLinkChecklist = async () => {
     if (!selectedBoardId || !newChecklistTitle.trim()) return;
     try {
-      const result = await createChecklistItem({ projectId, title: newChecklistTitle.trim() });
-      await updateBoard({ id: selectedBoardId, linkedChecklistItemId: result.id } as any);
+      const result = await createChecklistItem({ projectId, text: newChecklistTitle.trim() });
+      await updateBoard({ id: selectedBoardId, linked_checklist_item_id: result.id });
       queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'planning-boards'] });
       queryClient.invalidateQueries({ queryKey: [api.checklist.list.path, projectId] });
       setNewChecklistTitle("");
@@ -1266,7 +1275,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     if (!selectedBoardId || !newCalendarTitle.trim() || !newCalendarDate) return;
     try {
       const result = await createCalendarEvent({ projectId, title: newCalendarTitle.trim(), date: newCalendarDate, type: "event" });
-      await updateBoard({ id: selectedBoardId, linkedCalendarEventId: result.id } as any);
+      await updateBoard({ id: selectedBoardId, linked_calendar_event_id: result.id });
       queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'planning-boards'] });
       queryClient.invalidateQueries({ queryKey: [api.calendar.list.path, projectId] });
       setNewCalendarTitle("");
@@ -1279,7 +1288,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   };
 
   const toggleLinkedUser = (userId: string) => {
-    const current = selectedBoard?.linkedUserIds || [];
+    const current = selectedBoard?.linked_user_ids || [];
     const isAdding = !current.includes(userId);
     const next = isAdding
       ? [...current, userId]
@@ -1288,7 +1297,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   };
 
   const toggleLinkedProject = (projectId: number) => {
-    const current = (selectedBoard?.linkedProjectIds || []) as number[];
+    const current = (selectedBoard?.linked_project_ids || []) as number[];
     const isAdding = !current.includes(projectId);
     const next = isAdding
       ? [...current, projectId]
@@ -1315,7 +1324,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         const el = await createCanvasElement(selectedBoardId, { type: persistedType, x, y, width: def.width, height: def.height, z_index: maxZ, content: baseContent });
         addElement(el);
         sendElementAdd(el);
-        pushUndo({ type: "create", elementId: el.id });
+        pushUndo();
         setMaxZ((z) => z + 1);
       } catch {
         toast({ title: "Error", description: "Failed to apply template", variant: "destructive" });
@@ -1492,7 +1501,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       const el = await createCanvasElement(selectedBoardId, { type: persistedType, x: centerX, y: centerY, width: sized.width, height: sized.height, z_index: newZ, content: baseContent });
       addElement(el);
       sendElementAdd(el);
-      pushUndo({ type: "create", elementId: el.id });
+      pushUndo();
     } catch {
       toast({ title: "Error", description: "Failed to create element", variant: "destructive" });
     }
@@ -1524,7 +1533,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       const el = await createCanvasElement(selectedBoardId, { type: "link", x: placedX, y: placedY, width: def.width, height: def.height, z_index: newZ, content: baseContent });
       addElement(el);
       sendElementAdd(el);
-      pushUndo({ type: "create", elementId: el.id });
+      pushUndo();
       setTimeout(() => unfurlLink(el.id, url.trim()), 0);
       return el.id as number;
     } catch {
@@ -1557,7 +1566,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       const el = await createCanvasElement(selectedBoardId, { type: "text", x: placedX, y: placedY, width: def.width, height: autoHeight, z_index: newZ, content: baseContent });
       addElement(el);
       sendElementAdd(el);
-      pushUndo({ type: "create", elementId: el.id });
+      pushUndo();
       return el.id as number;
     } catch {
       toast({ title: "Error", description: "Failed to add note", variant: "destructive" });
@@ -1586,7 +1595,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       const el = await createCanvasElement(selectedBoardId, { type: "image", x: placedX, y: placedY, width: def.width, height: def.height, z_index: newZ, content: baseContent });
       addElement(el);
       sendElementAdd(el);
-      pushUndo({ type: "create", elementId: el.id });
+      pushUndo();
     } catch {
       toast({ title: "Error", description: "Failed to add image", variant: "destructive" });
     }
@@ -1617,7 +1626,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       });
       addElement(el);
       sendElementAdd(el);
-      pushUndo({ type: "create", elementId: el.id });
+      pushUndo();
       toast({ title: "Hardware added", description: draft.name });
     } catch {
       toast({ title: "Error", description: "Failed to add hardware", variant: "destructive" });
@@ -1685,7 +1694,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         });
         addElement(el);
         sendElementAdd(el);
-        pushUndo({ type: "create", elementId: el.id });
+        pushUndo();
         added++;
       } catch {
         // Continue dropping the rest; we'll surface a partial-success toast at the end.
@@ -1710,7 +1719,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       const el = await createCanvasElement(selectedBoardId, { type: "connector", x: 0, y: 0, width: 0, height: 0, z_index: 0, content });
       addElement(el);
       sendElementAdd(el);
-      pushUndo({ type: "create", elementId: el.id });
+      pushUndo();
       setSelectedConnectorId(el.id);
     } catch {
       toast({ title: "Error", description: "Failed to create connector", variant: "destructive" });
@@ -1723,17 +1732,17 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       return;
     }
     const el = elements[id];
-    if (el) pushUndo({ type: "delete", element: { ...el } });
+    if (el) pushUndo();
     // Find dangling connectors that reference this element and delete them too.
     const danglingConnectorIds: number[] = [];
     Object.values(elements).forEach((other) => {
       if (other.type !== "connector") return;
-      const c = (other.content || {}) as ConnectorContent;
+      const c = (other.content || {}) as unknown as ConnectorContent;
       if (c.fromId === id || c.toId === id) danglingConnectorIds.push(other.id);
     });
     for (const cid of danglingConnectorIds) {
       const conn = elements[cid];
-      if (conn) pushUndo({ type: "delete", element: { ...conn } });
+      if (conn) pushUndo();
       removeElement(cid);
       sendElementRemove(cid);
       try {
@@ -1757,7 +1766,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       return;
     }
     const el = elements[id];
-    if (el) pushUndo({ type: "delete", element: { ...el } });
+    if (el) pushUndo();
     removeElement(id);
     sendElementRemove(id);
     setSelectedConnectorId(null);
@@ -1770,9 +1779,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     if (lockLayout) return;
     const el = elements[id];
     if (!el) return;
-    const prev = (el.content || {}) as ConnectorContent;
+    const prev = (el.content || {}) as unknown as ConnectorContent;
     const next = { ...prev, ...patch };
-    pushUndo({ type: "update", elementId: id, prevUpdates: { content: prev as any } });
+    pushUndo();
     updateElement(id, { content: next as any });
     sendElementUpdate(id, { content: next as any });
     try {
@@ -1793,7 +1802,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       .map((child) => child.id);
     for (const childId of childIds) {
       const child = elements[childId];
-      if (child) pushUndo({ type: "delete", element: { ...child } });
+      if (child) pushUndo();
       removeElement(childId);
       sendElementRemove(childId);
       try {
@@ -1805,7 +1814,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
 
   const handleUpdateContent = async (id: number, content: any) => {
     const prev = elements[id];
-    if (prev) pushUndo({ type: "update", elementId: id, prevUpdates: { content: prev.content } });
+    if (prev) pushUndo();
     updateElement(id, { content });
     sendElementUpdate(id, { content });
     try {
@@ -1816,16 +1825,17 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   // Toggle the "Add to compare" action for a card from the contextual chip menu.
   // Capacity is enforced at the store layer so we can show a friendly toast here.
   const handleToggleCompare = (id: number) => {
-    const result = toggleCompare(id);
-    if (result === "full") {
+    const { compareIds } = useCanvasStore.getState();
+    if (compareIds.length >= 4 && !compareIds.includes(id)) {
       toast({
         title: "Compare holds up to 4 cards. Remove one first.",
         variant: "destructive",
       });
       return;
     }
-    if (result === "added") {
-      const next = useCanvasStore.getState().compareIds.length;
+    toggleCompare(id);
+    const next = useCanvasStore.getState().compareIds.length;
+    if (next > compareIds.length) {
       toast({ title: `Added to Compare (${next}/4)` });
     }
   };
@@ -1880,7 +1890,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       });
       addElement(el);
       sendElementAdd(el);
-      pushUndo({ type: "create", elementId: el.id });
+      pushUndo();
       return { ok: true };
     } catch {
       return { ok: false };
@@ -2192,79 +2202,19 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
 
   const handleUndo = useCallback(async () => {
     if (!selectedBoardId) return;
-    const action = popUndo();
-    if (!action) return;
-
-    let succeeded = false;
+    const prevElements = (() => {
+      const { undoStack } = useCanvasStore.getState();
+      return undoStack.length > 0 ? undoStack[undoStack.length - 1] : null;
+    })();
+    if (!prevElements) return;
+    popUndo();
     try {
-      switch (action.type) {
-        case "create": {
-          removeElement(action.elementId);
-          try {
-            await deleteCanvasElement(action.elementId);
-            succeeded = true;
-          } catch (err: any) {
-            succeeded = err?.code === "PGRST116" || err?.status === 404;
-          }
-          break;
-        }
-        case "delete": {
-          try {
-            const restored = await createCanvasElement(selectedBoardId, {
-              type: action.element.type,
-              x: action.element.x,
-              y: action.element.y,
-              width: action.element.width,
-              height: action.element.height,
-              z_index: action.element.z_index,
-              content: action.element.content,
-              parent_column_id: action.element.parent_column_id,
-            });
-            addElement(restored);
-            sendElementAdd(restored);
-            succeeded = true;
-          } catch {
-            succeeded = false;
-          }
-          break;
-        }
-        case "move": {
-          moveElement(action.elementId, action.prevX, action.prevY);
-          debouncedSavePositions(selectedBoardId);
-          succeeded = true;
-          break;
-        }
-        case "update": {
-          const el = elements[action.elementId];
-          if (el) {
-            updateElement(action.elementId, action.prevUpdates);
-            try {
-              await updateCanvasElement(action.elementId, action.prevUpdates as any);
-              succeeded = true;
-            } catch {
-              succeeded = false;
-            }
-          }
-          break;
-        }
-      }
+      await refreshCanvasFromServer();
+      toast({ title: "Undone" });
     } catch {
-      succeeded = false;
+      toast({ title: "Couldn't undo", variant: "destructive" });
     }
-
-    if (succeeded) {
-      toast({ title: "Undone", description: "Last action reversed." });
-    } else {
-      // Pull the truth from the server so the canvas matches reality —
-      // never silently lie that something was undone.
-      try { await refreshCanvasFromServer(); } catch {}
-      toast({
-        title: "Couldn't undo",
-        description: "That action couldn't be reversed. The board has been refreshed.",
-        variant: "destructive",
-      });
-    }
-  }, [selectedBoardId, elements]);
+  }, [selectedBoardId]);
 
   // Unified action dispatcher used by the Add palette, mobile bar, and shortcuts.
   // "image" / "connect" arm a placement cursor or open a dialog; everything else
@@ -2399,7 +2349,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       if (hit && hit.id !== drag.connectorId) {
         const conn = elements[drag.connectorId];
         if (conn && conn.type === "connector") {
-          const c = (conn.content || {}) as ConnectorContent;
+          const c = (conn.content || {}) as unknown as ConnectorContent;
           const otherId = drag.endpoint === "from" ? c.toId : c.fromId;
           if (hit.id !== otherId) {
             const patch: Partial<ConnectorContent> = drag.endpoint === "from"
@@ -2429,7 +2379,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     const toCull: number[] = [];
     elList.forEach((el) => {
       if (el.type !== "connector") return;
-      const c = (el.content || {}) as ConnectorContent;
+      const c = (el.content || {}) as unknown as ConnectorContent;
       const danglingFrom = !stillExists.has(c.fromId);
       const danglingTo = !stillExists.has(c.toId);
       if (danglingFrom || danglingTo) {
@@ -2707,7 +2657,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         const snappedX = Math.round(el.x / GRID_SIZE) * GRID_SIZE;
         const snappedY = Math.round(el.y / GRID_SIZE) * GRID_SIZE;
         if (startPos && (startPos.elX !== snappedX || startPos.elY !== snappedY)) {
-          pushUndo({ type: "move", elementId: draggedId, prevX: startPos.elX, prevY: startPos.elY });
+          pushUndo();
         }
         moveElement(draggedId, snappedX, snappedY);
         sendElementMove(draggedId, snappedX, snappedY);
@@ -2741,7 +2691,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     let foundColumn: number | null = null;
     Object.values(elements).forEach((col) => {
       if (col.type !== "column" || col.id === elementId) return;
-      const colChildEls = Object.values(elements).filter((e) => e.parentColumnId === col.id && e.id !== elementId);
+      const colChildEls = Object.values(elements).filter((e) => e.parent_column_id === col.id && e.id !== elementId);
       const colChildrenBottom = colChildEls.reduce((acc, child) => {
         return Math.max(acc, (child.y - col.y) + (child.height || 60) + 12);
       }, 0);
@@ -2755,7 +2705,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         foundColumn = col.id;
       }
     });
-    if (foundColumn !== el.parentColumnId) {
+    if (foundColumn !== el.parent_column_id) {
       setDroppingIds((prev) => new Set(prev).add(elementId));
       const existingTimer = droppingTimersRef.current.get(elementId);
       if (existingTimer) clearTimeout(existingTimer);
@@ -2775,7 +2725,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         const headerHeight = 50;
         const fitWidth = col.width - padding * 2;
         const siblings = Object.values(elements).filter(
-          (e) => e.parentColumnId === foundColumn && e.id !== elementId
+          (e) => e.parent_column_id === foundColumn && e.id !== elementId
         );
         const stackY = siblings.reduce((acc, sib) => {
           const sibBottom = sib.y + (sib.height || 60);
@@ -2783,7 +2733,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         }, col.y + headerHeight);
 
         const updates: Partial<CanvasElement> = {
-          parentColumnId: foundColumn,
+          parent_column_id: foundColumn,
           width: fitWidth,
           x: col.x + padding,
           y: stackY + 8,
@@ -2800,7 +2750,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
 
         updateElement(elementId, updates);
       } else {
-        updateElement(elementId, { parentColumnId: foundColumn });
+        updateElement(elementId, { parent_column_id: foundColumn });
       }
     }
   };
@@ -3096,7 +3046,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         const childDx = newX - prevX;
         const childDy = newY - prevY;
         for (const child of Object.values(liveElements)) {
-          if (child.parentColumnId === draggingId) {
+          if (child.parent_column_id === draggingId) {
             moveElement(child.id, child.x + childDx, child.y + childDy);
           }
         }
@@ -3160,7 +3110,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         const snappedX = Math.round(el.x / GRID_SIZE) * GRID_SIZE;
         const snappedY = Math.round(el.y / GRID_SIZE) * GRID_SIZE;
         if (startPos && (startPos.elX !== snappedX || startPos.elY !== snappedY)) {
-          pushUndo({ type: "move", elementId: draggedId, prevX: startPos.elX, prevY: startPos.elY });
+          pushUndo();
         }
         moveElement(draggedId, snappedX, snappedY);
         sendElementMove(draggedId, snappedX, snappedY);
@@ -3558,7 +3508,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     if (!lastPath || !lastPath.points || lastPath.points.length < 3) return;
     const recognized = recognizeShape(lastPath, paths.length);
     if (recognized) {
-      const snapped = { ...recognized, color: lastPath.color, strokeWidth: lastPath.strokeWidth };
+      const snapped = { ...lastPath, shapeType: recognized, color: lastPath.color, strokeWidth: lastPath.strokeWidth };
       const newPaths = [...paths.slice(0, -1), snapped];
       drawPathsRef.current = newPaths;
       setDrawingPaths(newPaths);
@@ -3772,7 +3722,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     const prev: Stroke[] = Array.isArray(c.annotations) ? c.annotations : [];
     const nextAnnotations = [...prev, stroke];
     const nextContent = { ...c, annotations: nextAnnotations };
-    pushUndo({ type: "update", elementId, prevUpdates: { content: { ...c } } });
+    pushUndo();
     updateElement(elementId, { content: nextContent });
     sendElementUpdate(elementId, { content: nextContent });
     try {
@@ -3928,10 +3878,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
           if (!recognized) return;
           // Commit the snapped path as a fresh entry in drawPathsRef.
           const snappedPath = {
-            points: recognized.points,
+            points: candidate.points,
             color: cur.color,
             strokeWidth: cur.strokeWidth,
-            shapeType: (recognized as any).shapeType,
+            shapeType: recognized,
           };
           drawPathsRef.current = [...drawPathsRef.current, snappedPath];
           setDrawingPaths([...drawPathsRef.current]);
@@ -4053,8 +4003,8 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
 
   const selectedBoard = boards.find((b: PlanningBoardType) => b.id === selectedBoardId);
   const clientProject = allProjects.find((p: any) => p.id === projectId);
-  const clientUser = allUsers.find((u: any) => u.id === clientProject?.clientId);
-  const clientIsLinked = clientUser ? (selectedBoard?.linkedUserIds || []).includes(clientUser.id) : false;
+  const clientUser = allUsers.find((u: any) => u.id === clientProject?.client_id);
+  const clientIsLinked = clientUser ? (selectedBoard?.linked_user_ids || []).includes(clientUser.id) : false;
   const toggleClientAccess = () => {
     if (!clientUser) return;
     toggleLinkedUser(clientUser.id);
@@ -4148,7 +4098,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     el.type !== "draw" &&
     el.type !== "room_zone" &&
     el.type !== "column" &&
-    !el.parentColumnId,
+    !el.parent_column_id,
   );
 
   const handleTidyBoard = () => {
@@ -4257,7 +4207,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       arrangedForFit.push({ x: nextX, y: nextY, width: widthOf(el), height: heightOf(el) });
       if (el.x === nextX && el.y === nextY) continue;
       movedIds.push(el.id);
-      pushUndo({ type: "move", elementId: el.id, prevX: el.x, prevY: el.y });
+      pushUndo();
       updateElement(el.id, { x: nextX, y: nextY });
       sendElementMove(el.id, nextX, nextY);
     }
@@ -4337,7 +4287,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       });
       addElement(el);
       sendElementAdd(el);
-      pushUndo({ type: "create", elementId: el.id });
+      pushUndo();
       persistActiveRoom(payload.name);
       // Pin the new room at the end of the saved order if we already have one.
       if (savedRoomOrder.length > 0 && !savedRoomOrder.includes(payload.name)) {
@@ -4703,7 +4653,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     // Connectors are rendered by the SVG overlay, not as cards.
     if (el.type === "connector") return null;
 
-    const parentCol = el.parentColumnId ? elements[el.parentColumnId] : null;
+    const parentCol = el.parent_column_id ? elements[el.parent_column_id] : null;
     const effectiveZ = parentCol ? Math.max(el.z_index, (parentCol.z_index || 0) + 1) : el.z_index;
     const isDropping = droppingIds.has(el.id);
     const cardBase = `board-card absolute rounded select-none ${isUnlocked ? "ring-2 ring-amber-400/70" : ""} ${isSelected && !activeEdit ? "is-selected" : ""} ${isDragging ? "is-dragging opacity-80 cursor-grabbing" : ""} ${isDropping && !isDragging ? "transition-[left,top,width,height] duration-300 ease-out" : ""}`;
@@ -5278,7 +5228,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     }
 
     if (el.type === "column") {
-      const childEls = elementsList.filter((e) => e.parentColumnId === el.id);
+      const childEls = elementsList.filter((e) => e.parent_column_id === el.id);
       const draggedType = draggingId !== null ? elements[draggingId]?.type : null;
       const isDroppableType = draggedType !== null && draggedType !== "column" && draggedType !== "section_header" && draggedType !== "room_zone";
       const isDropTarget = draggingId !== null && draggingId !== el.id && isDroppableType;
@@ -6847,29 +6797,29 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         )}
         </div>
         <Separator orientation="vertical" className="h-5 mx-1.5 hidden md:block" />
-        {(selectedBoard?.linkedUserIds?.length ?? 0) > 0 && (
+        {(selectedBoard?.linked_user_ids?.length ?? 0) > 0 && (
           <div className="hidden md:flex items-center gap-1" data-testid="badges-linked-people">
             <div className="flex -space-x-1.5">
-              {selectedBoard!.linkedUserIds!.slice(0, 4).map((uid: string) => {
+              {selectedBoard!.linked_user_ids!.slice(0, 4).map((uid: string) => {
                 const user = allUsers.find((u: any) => u.id === uid);
                 return (
                   <Avatar key={uid} className="h-5 w-5 border border-background">
-                    <AvatarImage src={user?.profileImageUrl || undefined} />
+                    <AvatarImage src={(user as any)?.profileImageUrl || (user as any)?.avatar_url || undefined} />
                     <AvatarFallback className="text-[8px]">
-                      {(user?.firstName?.[0] || "").toUpperCase()}{(user?.lastName?.[0] || "").toUpperCase()}
+                      {(((user as any)?.firstName || user?.name)?.[0] || "").toUpperCase()}{(((user as any)?.lastName)?.[0] || "").toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                 );
               })}
             </div>
-            {selectedBoard!.linkedUserIds!.length > 4 && (
-              <span className="text-xs text-muted-foreground">+{selectedBoard!.linkedUserIds!.length - 4}</span>
+            {selectedBoard!.linked_user_ids!.length > 4 && (
+              <span className="text-xs text-muted-foreground">+{selectedBoard!.linked_user_ids!.length - 4}</span>
             )}
           </div>
         )}
-        {(selectedBoard?.linkedProjectIds?.length ?? 0) > 0 && (
+        {(selectedBoard?.linked_project_ids?.length ?? 0) > 0 && (
           <div className="hidden md:flex items-center gap-1 flex-wrap" data-testid="badges-linked-projects">
-            {selectedBoard!.linkedProjectIds!.map((pid: number) => {
+            {selectedBoard!.linked_project_ids!.map((pid: number) => {
               const proj = allProjects.find((p: any) => p.id === pid);
               return proj ? (
                 <Badge key={pid} variant="outline" className="text-[10px]" data-testid={`badge-project-${pid}`}>
@@ -6880,8 +6830,8 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
           </div>
         )}
         <div className="hidden md:flex items-center gap-1.5">
-        {selectedBoard?.linkedCalendarEventId && (() => {
-          const ev = calendarEvents.find((e: any) => e.id === selectedBoard.linkedCalendarEventId);
+        {selectedBoard?.linked_calendar_event_id && (() => {
+          const ev = calendarEvents.find((e: any) => e.id === selectedBoard.linked_calendar_event_id);
           return ev ? (
             <Badge
               variant="outline"
@@ -6894,8 +6844,8 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
             </Badge>
           ) : null;
         })()}
-        {selectedBoard?.linkedMilestoneId && (() => {
-          const ms = milestones.find((m: any) => m.id === selectedBoard.linkedMilestoneId);
+        {selectedBoard?.linked_milestone_id && (() => {
+          const ms = milestones.find((m: any) => m.id === selectedBoard.linked_milestone_id);
           return ms ? (
             <Badge
               variant="outline"
@@ -6908,8 +6858,8 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
             </Badge>
           ) : null;
         })()}
-        {selectedBoard?.linkedChecklistItemId && (() => {
-          const cl = checklistItems.find((c: any) => c.id === selectedBoard.linkedChecklistItemId);
+        {selectedBoard?.linked_checklist_item_id && (() => {
+          const cl = checklistItems.find((c: any) => c.id === selectedBoard.linked_checklist_item_id);
           return cl ? (
             <Badge
               variant="outline"
@@ -7257,15 +7207,15 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                     <Tooltip key={c.userId}>
                       <TooltipTrigger asChild>
                         <Avatar className="h-6 w-6 border-2" style={{ borderColor: avatarColor }} data-testid={`collaborator-avatar-${c.userId}`}>
-                          <AvatarImage src={c.profileImageUrl || undefined} />
+                          <AvatarImage src={c.profileImageUrl} />
                           <AvatarFallback className="text-[9px]" style={{ backgroundColor: avatarColor, color: "white" }}>
-                            {(c.firstName?.[0] || "").toUpperCase()}{(c.lastName?.[0] || "").toUpperCase()}
+                            {(c.firstName?.[0] || c.name?.[0] || "").toUpperCase()}{(c.lastName?.[0] || "").toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
                       </TooltipTrigger>
                       <TooltipContent side="bottom" className="text-xs">
                         <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ backgroundColor: avatarColor }} />
-                        {c.firstName} {c.lastName} is editing
+                        {c.firstName || c.name} {c.lastName} is editing
                       </TooltipContent>
                     </Tooltip>
                   );
@@ -7576,7 +7526,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                       .then((el) => {
                         addElement(el);
                         sendElementAdd(el);
-                        pushUndo({ type: "create", elementId: el.id });
+                        pushUndo();
                       })
                       .catch(() => {
                         toast({ title: "Error", description: "Failed to add paint from library", variant: "destructive" });
@@ -7886,7 +7836,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                       top: el.y - 3,
                       width: (el.width || 240) + 6,
                       height: (el.height || 140) + 6,
-                      border: `2px solid ${edit.color}`,
+                      border: `2px solid ${edit.color || "#e57373"}`,
                       zIndex: 99998,
                       transition: "opacity 0.3s ease",
                     }}
@@ -7894,9 +7844,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                   >
                     <div
                       className="absolute -top-5 left-0 flex items-center gap-1 px-1.5 py-0.5 rounded-t text-[10px] font-medium text-white whitespace-nowrap"
-                      style={{ backgroundColor: edit.color }}
+                      style={{ backgroundColor: edit.color || "#e57373" }}
                     >
-                      {edit.firstName} {edit.lastName?.[0]}.
+                      {edit.firstName || "Unknown"} {edit.lastName?.[0] || ""}
                     </div>
                   </div>
                 );
@@ -7916,13 +7866,13 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                   data-testid={`live-cursor-${c.userId}`}
                 >
                   <svg width="16" height="20" viewBox="0 0 16 20" fill="none" style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.3))" }}>
-                    <path d="M0 0L16 12L8 12L4 20L0 0Z" fill={c.color} />
+                    <path d="M0 0L16 12L8 12L4 20L0 0Z" fill={c.color || "#e57373"} />
                   </svg>
                   <div
                     className="absolute left-4 top-3 px-1.5 py-0.5 rounded text-[10px] font-medium text-white whitespace-nowrap"
-                    style={{ backgroundColor: c.color }}
+                    style={{ backgroundColor: c.color || "#e57373" }}
                   >
-                    {c.firstName}
+                    {c.firstName || "User"}
                   </div>
                 </div>
               ))}
@@ -7969,7 +7919,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
             {selectedConnectorId !== null && (() => {
               const conn = elements[selectedConnectorId];
               if (!conn || conn.type !== "connector") return null;
-              const c = (conn.content || {}) as ConnectorContent;
+              const c = (conn.content || {}) as unknown as ConnectorContent;
               const fromEl = elements[c.fromId];
               const toEl = elements[c.toId];
               if (!fromEl || !toEl) return null;
@@ -8822,9 +8772,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
             <DialogDescription>This permanently deletes the selected board.</DialogDescription>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">This will permanently delete &quot;{selectedBoard?.name}&quot; and all its elements. This cannot be undone.</p>
-          {selectedBoard?.linkedCalendarEventId && (() => {
-            const hasOtherLinks = !!(selectedBoard.linkedMilestoneId || selectedBoard.linkedChecklistItemId);
-            const ev = calendarEvents.find((e: any) => e.id === selectedBoard.linkedCalendarEventId);
+          {selectedBoard?.linked_calendar_event_id && (() => {
+            const hasOtherLinks = !!(selectedBoard.linked_milestone_id || selectedBoard.linked_checklist_item_id);
+            const ev = calendarEvents.find((e: any) => e.id === selectedBoard.linked_calendar_event_id);
             if (!ev) return null;
             return hasOtherLinks ? (
               <p className="text-sm text-muted-foreground" data-testid="text-delete-unlink-warning">
@@ -8952,7 +8902,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                   <p className="text-xs text-muted-foreground py-1 px-1">No team members found</p>
                 )}
                 {allUsers.map((u: any) => {
-                  const isLinked = (selectedBoard?.linkedUserIds || []).includes(u.id);
+                  const isLinked = (selectedBoard?.linked_user_ids || []).includes(u.id);
                   return (
                     <label
                       key={u.id}
@@ -8988,7 +8938,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                   <p className="text-xs text-muted-foreground py-1 px-1">No other projects available</p>
                 )}
                 {allProjects.filter((p: any) => p.id !== projectId).map((p: any) => {
-                  const isLinked = (selectedBoard?.linkedProjectIds || []).includes(p.id);
+                  const isLinked = (selectedBoard?.linked_project_ids || []).includes(p.id);
                   return (
                     <label
                       key={p.id}
@@ -9045,7 +8995,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                   </div>
                 ) : (
                   <Select
-                    value={selectedBoard?.linkedMilestoneId?.toString() || "none"}
+                    value={selectedBoard?.linked_milestone_id?.toString() || "none"}
                     onValueChange={(v) => handleLinkUpdate("linkedMilestoneId", v === "none" ? null : Number(v))}
                   >
                     <SelectTrigger className="h-8 text-xs" data-testid="select-link-milestone">
@@ -9093,7 +9043,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                   </div>
                 ) : (
                   <Select
-                    value={selectedBoard?.linkedChecklistItemId?.toString() || "none"}
+                    value={selectedBoard?.linked_checklist_item_id?.toString() || "none"}
                     onValueChange={(v) => handleLinkUpdate("linkedChecklistItemId", v === "none" ? null : Number(v))}
                   >
                     <SelectTrigger className="h-8 text-xs" data-testid="select-link-checklist">
@@ -9149,7 +9099,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                   </div>
                 ) : (
                   <Select
-                    value={selectedBoard?.linkedCalendarEventId?.toString() || "none"}
+                    value={selectedBoard?.linked_calendar_event_id?.toString() || "none"}
                     onValueChange={(v) => handleLinkUpdate("linkedCalendarEventId", v === "none" ? null : Number(v))}
                   >
                     <SelectTrigger className="h-8 text-xs" data-testid="select-link-event">
@@ -9292,7 +9242,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
             .map((e) => String((e.content as any).title).trim())
             .filter(Boolean)
         ))}
-        uploadImage={async (file) => uploadImage(file)}
+        uploadImage={async (file) => {
+          const result = await uploadImage(file);
+          return result.url;
+        }}
         onAdd={createPaletteSwatches}
         presetImageUrl={palettePresetUrl}
       />
@@ -9361,7 +9314,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                             const trimmed = editingEventTitle.trim();
                             if (trimmed && trimmed !== ev.title) {
                               try {
-                                await updateCalendarEvent({ id: ev.id, title: trimmed });
+                                await updateCalendarEvent({ id: ev.id, title: trimmed, projectId });
                                 toast({ title: "Updated", description: "Event title saved." });
                               } catch {
                                 toast({ title: "Error", description: "Failed to update title.", variant: "destructive" });
@@ -9378,7 +9331,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                               const trimmed = editingEventTitle.trim();
                               if (trimmed && trimmed !== ev.title) {
                                 try {
-                                  await updateCalendarEvent({ id: ev.id, title: trimmed });
+                                  await updateCalendarEvent({ id: ev.id, title: trimmed, projectId });
                                   toast({ title: "Updated", description: "Event title saved." });
                                 } catch {
                                   toast({ title: "Error", description: "Failed to update title.", variant: "destructive" });
@@ -9430,7 +9383,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                               const newDate = format(day, "yyyy-MM-dd");
                               if (newDate !== ev.date) {
                                 try {
-                                  await updateCalendarEvent({ id: ev.id, date: newDate });
+                                  await updateCalendarEvent({ id: ev.id, date: newDate, projectId });
                                   toast({ title: "Updated", description: "Event date saved." });
                                 } catch {
                                   toast({ title: "Error", description: "Failed to update date.", variant: "destructive" });
@@ -9442,10 +9395,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                         </PopoverContent>
                       </Popover>
                     </div>
-                    {ev.endDate && (
+                    {ev.end_date && (
                       <div>
                         <label className="text-xs text-muted-foreground">End Date</label>
-                        <p className="text-sm font-medium mt-1" data-testid="detail-event-end-date">{format(parseISO(ev.endDate), "MMM d, yyyy")}</p>
+                        <p className="text-sm font-medium mt-1" data-testid="detail-event-end-date">{format(parseISO(ev.end_date), "MMM d, yyyy")}</p>
                       </div>
                     )}
                   </div>
@@ -9546,12 +9499,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
 
       {showPresentation && selectedBoardId !== null && (
         <PresentationMode
-          open={showPresentation}
-          onClose={() => setShowPresentation(false)}
           projectId={projectId}
           boardId={selectedBoardId}
-          boardName={selectedBoard?.name}
-          elements={Object.values(elements)}
+          onClose={() => setShowPresentation(false)}
         />
       )}
       {selectedBoardId !== null && (actualRole === "admin" || actualRole === "crew") && (
@@ -9562,7 +9512,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
           projectId={projectId}
           boardId={selectedBoardId}
           elements={Object.values(elements)}
-          hasClient={Boolean(allProjects.find((p: any) => p.id === projectId)?.clientId)}
+          hasClient={Boolean(allProjects.find((p: any) => p.id === projectId)?.client_id)}
           // Bridge: when the co-designer proposes a note and the user taps
           // "Add", drop a real text element on this board's canvas.
           onAddNote={(text) => createNoteFromText(text)}

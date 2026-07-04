@@ -126,6 +126,7 @@ export default function CostEstimator() {
         const { data, error } = await supabase.from("project_estimates").insert({
           project_id: projectId,
           name: "Main Estimate",
+          status: "draft",
           markup_enabled: markupEnabled,
           markup_percent: markupPct,
           contingency_percent: contingencyPct,
