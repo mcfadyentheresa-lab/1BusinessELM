@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Upload, Link, Image, Loader2, Palette } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
 
 interface ExtractedColor {
   hex: string;
@@ -96,8 +97,10 @@ export function PaletteExtractionDialog({
       const result: ExtractedColor[] = json.colors ?? [];
       setColors(result);
       setSelected(new Set(result.map((c) => c.hex)));
-    } catch {
+    } catch (err) {
+      console.error("[PaletteExtraction] Failed to extract palette", err);
       setColors([]);
+      toast({ title: "Palette extraction failed", description: "Try a different image or URL.", variant: "destructive" });
     } finally {
       setExtracting(false);
     }

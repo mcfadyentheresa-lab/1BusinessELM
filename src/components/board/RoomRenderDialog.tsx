@@ -6,6 +6,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Upload, Sparkles, RefreshCw, Clock, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+
+const MAX_POLL_ATTEMPTS = 30;
 
 type RenderMode = "restyle" | "imagine";
 
@@ -49,8 +52,13 @@ export function RoomRenderDialog({ open, onOpenChange, boardId, projectId, roomN
       if (res.ok) {
         const json = await res.json();
         setJobs(json.jobs ?? []);
+      } else {
+        toast({ title: "Couldn't load render history", variant: "destructive" });
       }
-    } catch {}
+    } catch (err) {
+      console.error("[RoomRender] Failed to load history", err);
+      toast({ title: "Couldn't load render history", variant: "destructive" });
+    }
   };
 
   useEffect(() => {
@@ -59,7 +67,16 @@ export function RoomRenderDialog({ open, onOpenChange, boardId, projectId, roomN
 
   const pollJob = (jobId: string) => {
     if (pollRef.current) clearInterval(pollRef.current);
+    let attempts = 0;
     pollRef.current = setInterval(async () => {
+      attempts++;
+      if (attempts >= MAX_POLL_ATTEMPTS) {
+        clearInterval(pollRef.current!);
+        pollRef.current = null;
+        console.error("[RoomRender] Polling timed out after", attempts, "attempts for job", jobId);
+        toast({ title: "Render timed out", description: "Check back in a moment.", variant: "destructive" });
+        return;
+      }
       try {
         const res = await fetch(`/api/rooms/render/${jobId}`);
         if (res.ok) {
@@ -71,7 +88,9 @@ export function RoomRenderDialog({ open, onOpenChange, boardId, projectId, roomN
             loadHistory();
           }
         }
-      } catch {}
+      } catch (err) {
+        console.error("[RoomRender] Poll error for job", jobId, err);
+      }
     }, 2000);
   };
 
@@ -98,8 +117,9 @@ export function RoomRenderDialog({ open, onOpenChange, boardId, projectId, roomN
       const job: RenderJob = await res.json();
       setActiveJob(job);
       pollJob(job.id);
-    } catch {
-      // silent — user sees no result
+    } catch (err) {
+      console.error("[RoomRender] Failed to submit render", err);
+      toast({ title: "Render failed to start", description: "Please try again.", variant: "destructive" });
     } finally {
       setSubmitting(false);
     }

@@ -75,24 +75,31 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 }));
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingSaveBoardId: number | null = null;
+
+async function runPositionSave(boardId: number) {
+  const elements = Object.values(useCanvasStore.getState().elements);
+  if (!elements.length) return;
+  const updates = elements.map((el) => ({
+    id: el.id,
+    x: Math.round(el.x),
+    y: Math.round(el.y),
+    width: Math.round(el.width),
+    height: Math.round(el.height ?? 0),
+    z_index: Math.round(el.z_index),
+  }));
+  for (const u of updates) {
+    await supabase.from("canvas_elements").update({ x: u.x, y: u.y, width: u.width, height: u.height, z_index: u.z_index }).eq("id", u.id);
+  }
+}
 
 export function debouncedSavePositions(boardId: number, delay = 1500) {
   if (saveTimer) clearTimeout(saveTimer);
+  pendingSaveBoardId = boardId;
   saveTimer = setTimeout(async () => {
     saveTimer = null;
-    const elements = Object.values(useCanvasStore.getState().elements);
-    if (!elements.length) return;
-    const updates = elements.map((el) => ({
-      id: el.id,
-      x: Math.round(el.x),
-      y: Math.round(el.y),
-      width: Math.round(el.width),
-      height: Math.round(el.height ?? 0),
-      z_index: Math.round(el.z_index),
-    }));
-    for (const u of updates) {
-      await supabase.from("canvas_elements").update({ x: u.x, y: u.y, width: u.width, height: u.height, z_index: u.z_index }).eq("id", u.id);
-    }
+    pendingSaveBoardId = null;
+    await runPositionSave(boardId);
   }, delay);
 }
 
@@ -100,5 +107,23 @@ export function cancelPendingSave() {
   if (saveTimer) {
     clearTimeout(saveTimer);
     saveTimer = null;
+    pendingSaveBoardId = null;
   }
+}
+
+function flushPendingSave() {
+  if (saveTimer && pendingSaveBoardId !== null) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    const boardId = pendingSaveBoardId;
+    pendingSaveBoardId = null;
+    void runPositionSave(boardId);
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", flushPendingSave);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushPendingSave();
+  });
 }

@@ -1747,7 +1747,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       sendElementRemove(cid);
       try {
         await deleteCanvasElement(cid);
-      } catch {}
+      } catch (err) {
+        console.error("[Board] Failed to delete dangling connector", cid, err);
+        toast({ title: "Save failed", description: "A connector could not be deleted on the server.", variant: "destructive" });
+      }
     }
     if (selectedConnectorId && danglingConnectorIds.includes(selectedConnectorId)) {
       setSelectedConnectorId(null);
@@ -1757,7 +1760,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     setEditingId(null);
     try {
       await deleteCanvasElement(id);
-    } catch {}
+    } catch (err) {
+      console.error("[Board] Failed to delete element", id, err);
+      toast({ title: "Delete failed", description: "The element was removed locally but may still exist on the server. Refresh to check.", variant: "destructive" });
+    }
   };
 
   const handleDeleteConnector = async (id: number) => {
@@ -1772,7 +1778,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     setSelectedConnectorId(null);
     try {
       await deleteCanvasElement(id);
-    } catch {}
+    } catch (err) {
+      console.error("[Board] Failed to delete connector", id, err);
+      toast({ title: "Delete failed", description: "The connector was removed locally but may still exist on the server.", variant: "destructive" });
+    }
   };
 
   const handleUpdateConnector = async (id: number, patch: Partial<ConnectorContent>) => {
@@ -1786,7 +1795,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     sendElementUpdate(id, { content: next as any });
     try {
       await updateCanvasElement(id, { content: next as any });
-    } catch {}
+    } catch (err) {
+      console.error("[Board] Failed to update connector", id, err);
+      toast({ title: "Save failed", description: "Connector changes weren't saved to the server.", variant: "destructive" });
+    }
   };
 
   const _handleDeleteRoomZone = async (id: number) => {
@@ -1807,7 +1819,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       sendElementRemove(childId);
       try {
         await deleteCanvasElement(childId);
-      } catch {}
+      } catch (err) {
+        console.error("[Board] Failed to delete room-zone child", childId, err);
+        toast({ title: "Save failed", description: "A child element could not be deleted on the server.", variant: "destructive" });
+      }
     }
     await handleDeleteElement(id);
   };
@@ -1819,7 +1834,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     sendElementUpdate(id, { content });
     try {
       await updateCanvasElement(id, { content });
-    } catch {}
+    } catch (err) {
+      console.error("[Board] Failed to update element content", id, err);
+      toast({ title: "Save failed", description: "Your edit wasn't saved to the server. It may not persist after refresh.", variant: "destructive" });
+    }
   };
 
   // Toggle the "Add to compare" action for a card from the contextual chip menu.
@@ -1945,8 +1963,11 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     sendElementUpdate(id, { content: next });
     try {
       await updateCanvasElement(id, { content: next });
-    } catch {}
-  }, [updateElement, sendElementUpdate]);
+    } catch (err) {
+      console.error("[Board] Silent content patch failed", id, err);
+      toast({ title: "Save failed", description: "A background update wasn't saved to the server.", variant: "destructive" });
+    }
+  }, [updateElement, sendElementUpdate, toast]);
 
   // Fetch og:image / title / siteName / description for a link card via the server-side
   // unfurl endpoint and merge it onto the element. Marks loading/error state so the card
@@ -2395,7 +2416,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       removeElement(id);
       try {
         await deleteCanvasElement(id);
-      } catch {}
+      } catch (err) {
+        console.error("[Board] Failed to cull orphaned element", id, err);
+        toast({ title: "Save failed", description: "An orphaned element could not be removed from the server.", variant: "destructive" });
+      }
     });
   }, [elements, selectedBoardId, removeElement]);
 
@@ -4317,7 +4341,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       sendElementUpdate(u.id, { content: u.nextContent });
       try {
         await updateCanvasElement(u.id, { content: u.nextContent });
-      } catch {}
+      } catch (err) {
+        console.error("[Board] Failed to persist room rename", u.id, err);
+        toast({ title: "Save failed", description: "Some room-rename changes weren't saved to the server.", variant: "destructive" });
+      }
     }
     if (activeRoom === oldName) persistActiveRoom(newName);
     if (savedRoomOrder.length > 0) {
@@ -4349,7 +4376,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       sendElementUpdate(u.id, { content: u.nextContent });
       try {
         await updateCanvasElement(u.id, { content: u.nextContent });
-      } catch {}
+      } catch (err) {
+        console.error("[Board] Failed to persist category rename", u.id, err);
+        toast({ title: "Save failed", description: "Some category-rename changes weren't saved to the server.", variant: "destructive" });
+      }
     }
     if (activeRoom === oldName) persistActiveRoom(newName);
     if (savedCategoryOrder.length > 0) {
@@ -4384,14 +4414,20 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       sendElementUpdate(u.id, { content: u.nextContent });
       try {
         await updateCanvasElement(u.id, { content: u.nextContent });
-      } catch {}
+      } catch (err) {
+        console.error("[Board] Failed to persist room delete", u.id, err);
+        toast({ title: "Save failed", description: "Some room-delete changes weren't saved to the server.", variant: "destructive" });
+      }
     }
 
     for (const id of idsToDelete) {
       removeElement(id);
       try {
         await deleteCanvasElement(id);
-      } catch {}
+      } catch (err) {
+        console.error("[Board] Failed to delete room zone", id, err);
+        toast({ title: "Save failed", description: "A room zone could not be deleted on the server.", variant: "destructive" });
+      }
     }
 
     if (savedRoomOrder.length > 0) {
@@ -4423,7 +4459,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       sendElementUpdate(u.id, { content: u.nextContent });
       try {
         await updateCanvasElement(u.id, { content: u.nextContent });
-      } catch {}
+      } catch (err) {
+        console.error("[Board] Failed to persist category delete", u.id, err);
+        toast({ title: "Save failed", description: "Some category-delete changes weren't saved to the server.", variant: "destructive" });
+      }
     }
 
     if (savedCategoryOrder.length > 0) {
@@ -9151,6 +9190,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
               updateElement(zone.id, {
                 content: { ...((zone.content as any) || {}), sourcePhotoUrl: url },
               } as any);
+            }}
+            onAccept={(url) => {
+              createImageFromUrl(url, `Room render — ${renderRoomName ?? ""}`.trim());
+              setRenderRoomName(null);
             }}
           />
         );
