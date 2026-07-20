@@ -103,7 +103,7 @@ Deno.serve(async (req: Request) => {
           )
         `)
         .eq("ignored", false)
-        .lt("created_at", threeDaysAgo);
+        .lt("estimate_items.created_at", threeDaysAgo);
 
       if (wErr) {
         summary.errors.push(`Check A query: ${wErr.message}`);
