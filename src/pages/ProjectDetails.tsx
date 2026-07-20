@@ -660,10 +660,10 @@ export default function ProjectDetails() {
           ) : (
             <div className="space-y-6">
               {/* Horizontal step strip */}
-              <div className="rounded-xl border border-border bg-card p-5 overflow-x-auto">
+              <div className="rounded-lg border border-border bg-card px-3 py-2.5 overflow-x-auto">
                 <div className="flex items-start min-w-max gap-0">
                   {(milestones ?? []).map((m: MilestoneWithSubs, i: number) => (
-                    <div key={m.id} className="flex items-start flex-1 min-w-[120px]">
+                    <div key={m.id} className="flex items-start flex-1 min-w-[80px]">
                       <div className="flex flex-col items-center flex-1">
                         <div className="flex items-center w-full">
                           <div className={cn("flex-1 h-px", i === 0 ? "invisible" : m.completed ? "bg-primary" : "bg-border")} />
@@ -672,19 +672,19 @@ export default function ProjectDetails() {
                             disabled={!isAdmin}
                             onClick={() => isAdmin && updateMilestone.mutate({ id: m.id, projectId, completed: !m.completed })}
                             className={cn(
-                              "h-7 w-7 rounded-full border-2 flex items-center justify-center shrink-0 z-10 transition-colors",
+                              "h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0 z-10 transition-colors",
                               m.completed
                                 ? "bg-primary border-primary text-primary-foreground"
                                 : isAdmin ? "bg-card border-border text-muted-foreground hover:border-primary/60 hover:bg-primary/10 cursor-pointer" : "bg-card border-border text-muted-foreground"
                             )}
                             title={isAdmin ? (m.completed ? "Mark incomplete" : "Mark complete") : undefined}
                           >
-                            {m.completed ? <Check className="h-3 w-3" /> : <span className="text-[10px] font-semibold">{i + 1}</span>}
+                            {m.completed ? <Check className="h-2.5 w-2.5" /> : <span className="text-[9px] font-semibold">{i + 1}</span>}
                           </button>
                           <div className={cn("flex-1 h-px", i === (milestones ?? []).length - 1 ? "invisible" : m.completed ? "bg-primary" : "bg-border")} />
                         </div>
-                        <div className="mt-2.5 text-center px-1">
-                          <p className={cn("text-xs font-semibold leading-tight", m.completed ? "text-foreground" : "text-muted-foreground")}>{m.title}</p>
+                        <div className="mt-1.5 text-center px-1">
+                          <p className={cn("text-[11px] font-semibold leading-tight", m.completed ? "text-foreground" : "text-muted-foreground")}>{m.title}</p>
                           {m.date && <p className="text-[10px] text-muted-foreground mt-0.5">{formatDate(m.date)}</p>}
                         </div>
                       </div>
