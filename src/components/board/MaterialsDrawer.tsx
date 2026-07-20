@@ -544,15 +544,17 @@ export function MaterialsDrawer({ projectId, onAddImageUrl, activeRoom, activeRo
             );
           })}
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <button type="button" onClick={() => setGroupBy((v) => !v)} aria-pressed={groupBy} className={`h-7 px-2.5 rounded-full text-[11px] font-medium transition-colors inline-flex items-center gap-1 ${groupBy ? "bg-[#2f4a3a] text-white" : "bg-muted text-muted-foreground hover:bg-muted/70"}`} data-testid="materials-group-by-toggle">
-            <FolderPlus className="h-3 w-3" /> {groupBy ? "Grouped" : "Group by…"}
-          </button>
-          <button type="button" onClick={() => { setSelectMode((v) => { if (v) setSelectedKeys(new Set()); return !v; }); }} aria-pressed={selectMode} className={`h-7 px-2.5 rounded-full text-[11px] font-medium transition-colors inline-flex items-center gap-1 ${selectMode ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"}`} data-testid="materials-select-toggle">
-            {selectMode ? <CheckSquare className="h-3 w-3" /> : <Square className="h-3 w-3" />}
-            {selectMode ? `Selecting (${selectedKeys.size})` : "Select"}
-          </button>
-        </div>
+        {items.length > 6 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button type="button" onClick={() => setGroupBy((v) => !v)} aria-pressed={groupBy} className={`h-7 px-2.5 rounded-full text-[11px] font-medium transition-colors inline-flex items-center gap-1 ${groupBy ? "bg-[#2f4a3a] text-white" : "bg-muted text-muted-foreground hover:bg-muted/70"}`} data-testid="materials-group-by-toggle">
+              <FolderPlus className="h-3 w-3" /> {groupBy ? "Grouped" : "Group by…"}
+            </button>
+            <button type="button" onClick={() => { setSelectMode((v) => { if (v) setSelectedKeys(new Set()); return !v; }); }} aria-pressed={selectMode} className={`h-7 px-2.5 rounded-full text-[11px] font-medium transition-colors inline-flex items-center gap-1 ${selectMode ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"}`} data-testid="materials-select-toggle">
+              {selectMode ? <CheckSquare className="h-3 w-3" /> : <Square className="h-3 w-3" />}
+              {selectMode ? `Selecting (${selectedKeys.size})` : "Select"}
+            </button>
+          </div>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto p-3">
         {isLoading ? (

@@ -44,6 +44,7 @@ interface RoomTabStripProps {
   onDeleteRoom: (name: string) => void;
   onRenderRoom?: (room: string) => void;
   onExportSpec?: (room: string) => void;
+  inline?: boolean;
 }
 
 const STATUS_COLORS: Record<RoomStatus, string> = {
@@ -73,6 +74,7 @@ export function RoomTabStrip({
   onDeleteRoom,
   onRenderRoom,
   onExportSpec,
+  inline = false,
 }: RoomTabStripProps) {
   const [addingRoom, setAddingRoom] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
@@ -142,9 +144,9 @@ export function RoomTabStrip({
   const counts = activeRoom !== undefined ? countByStatus(elements, activeRoom) : null;
 
   return (
-    <div className="flex items-center border-b border-border bg-background/95 backdrop-blur-sm min-h-[40px]">
+    <div className={inline ? "flex items-center min-h-[32px] min-w-0 flex-1" : "flex items-center border-b border-border bg-background/95 backdrop-blur-sm min-h-[40px]"}>
       {/* Room tabs — scrollable, grows to fill available space */}
-      <div className="flex items-center gap-0.5 px-2 py-1 overflow-x-auto scrollbar-none flex-1 min-w-0">
+      <div className={inline ? "flex items-center gap-0.5 py-0.5 overflow-x-auto scrollbar-none flex-1 min-w-0" : "flex items-center gap-0.5 px-2 py-1 overflow-x-auto scrollbar-none flex-1 min-w-0"}>
         {/* All rooms tab */}
         <button
           type="button"
@@ -266,7 +268,7 @@ export function RoomTabStrip({
       </div>
 
       {/* Status filters + budget — fixed width, never scrolls */}
-      <div className="flex items-center gap-1 px-2 py-1 shrink-0 border-l border-border/60">
+      <div className={inline ? "flex items-center gap-1 py-0.5 shrink-0" : "flex items-center gap-1 px-2 py-1 shrink-0 border-l border-border/60"}>
         <button
           type="button"
           onClick={() => onStatusChange(null)}

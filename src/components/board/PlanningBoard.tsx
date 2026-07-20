@@ -49,7 +49,7 @@ import {
   Spline, MoveRight, Slash, Droplet,
   Play, Globe, Star, History, AlertTriangle, Settings,
   Pin, Layers, Armchair, Image as ImageIcon, Grid3x3, Crop as CropIcon, RotateCcw,
-  ChevronDown,
+  ChevronDown, Filter,
 } from "lucide-react";
 import { DESIGNER_SUPPLIER_GROUPS } from "@/lib/designer-suppliers";
 import LibraryCollectionsView from "@/components/board/LibraryCollectionsView";
@@ -444,6 +444,9 @@ const STATUS_CHIP: Record<string, { className: string; label: string; withCheck?
   selected:  { className: "bg-primary text-primary-foreground",    label: "Selected" },
   ordered:   { className: "bg-primary text-primary-foreground",    label: "Ordered", withCheck: true },
 };
+// Unified badge base classes — status badges read as primary signal, metadata badges as secondary.
+const STATUS_BADGE_BASE = "inline-flex items-center gap-1 h-5 px-1.5 rounded-full text-[9px] font-mono uppercase tracking-wider transition-colors";
+const META_BADGE_BASE = "inline-flex items-center h-5 px-1.5 rounded-full text-[10px] font-mono text-muted-foreground/80 bg-muted/60";
 
 // Pull a friendly domain ("knoll.com") from any URL — used as the link card subtitle
 // and as the seed for the favicon-fallback tile.
@@ -820,6 +823,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   const [savedCategoryOrder, setSavedCategoryOrder] = useState<string[]>([]);
   const [statusFilters, setStatusFilters] = useState<Set<RoomStatus>>(() => new Set());
   const [secondaryChips, setSecondaryChips] = useState<Set<string>>(() => new Set());
+  const [filterExpanded, setFilterExpanded] = useState(false);
   const [libraryView, setLibraryView] = useState<"covers" | "chips">("covers");
   const [showEmptyCollections, setShowEmptyCollections] = useState<boolean>(false);
   useEffect(() => {
@@ -1466,8 +1470,11 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       }
     } else {
       sized = { width: def.width, height: def.height };
-      centeredX = x ?? Math.round((-pan.x + (containerRef.current?.clientWidth || 800) / 2) / zoom - sized.width / 2);
-      centeredY = y ?? Math.round((-pan.y + (containerRef.current?.clientHeight || 600) / 2) / zoom - sized.height / 2);
+      // Anchor new content to a consistent top-left origin (24px margin) instead of
+      // viewport center, so an empty board reads as organized rather than scattered.
+      // findFreeSlot below walks right/down from this origin so cards still tile.
+      centeredX = x ?? Math.round((-pan.x) / zoom + 24);
+      centeredY = y ?? Math.round((-pan.y) / zoom + 24);
     }
     const desiredX = centeredX;
     const desiredY = centeredY;
@@ -1518,8 +1525,8 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   ): Promise<number | null> => {
     if (!selectedBoardId || !url.trim()) return null;
     const def = ELEMENT_DEFAULTS["link"];
-    const desiredX = pos?.x ?? Math.round((-pan.x + (containerRef.current?.clientWidth || 800) / 2) / zoom - def.width / 2);
-    const desiredY = pos?.y ?? Math.round((-pan.y + (containerRef.current?.clientHeight || 600) / 2) / zoom - def.height / 2);
+    const desiredX = pos?.x ?? Math.round((-pan.x) / zoom + 24);
+    const desiredY = pos?.y ?? Math.round((-pan.y) / zoom + 24);
     const { x: placedX, y: placedY } = (pos ? { x: desiredX, y: desiredY } : findFreeSlot(desiredX, desiredY, def.width, def.height));
     const newZ = maxZ;
     setMaxZ((z) => z + 1);
@@ -1556,8 +1563,8 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     const trimmed = text.trim();
     const lineCount = trimmed.split(/\n/).reduce((acc, line) => acc + Math.max(1, Math.ceil(line.length / 32)), 0);
     const autoHeight = Math.min(420, Math.max(def.height, 60 + lineCount * 18));
-    const desiredX = pos?.x ?? Math.round((-pan.x + (containerRef.current?.clientWidth || 800) / 2) / zoom - def.width / 2);
-    const desiredY = pos?.y ?? Math.round((-pan.y + (containerRef.current?.clientHeight || 600) / 2) / zoom - autoHeight / 2);
+    const desiredX = pos?.x ?? Math.round((-pan.x) / zoom + 24);
+    const desiredY = pos?.y ?? Math.round((-pan.y) / zoom + 24);
     const { x: placedX, y: placedY } = (pos ? { x: desiredX, y: desiredY } : findFreeSlot(desiredX, desiredY, def.width, autoHeight));
     const newZ = maxZ;
     setMaxZ((z) => z + 1);
@@ -1580,8 +1587,8 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   const createImageFromUrl = async (imageUrl: string, caption?: string) => {
     if (!selectedBoardId) return;
     const def = ELEMENT_DEFAULTS["image"];
-    const desiredX = Math.round((-pan.x + (containerRef.current?.clientWidth || 800) / 2) / zoom - def.width / 2);
-    const desiredY = Math.round((-pan.y + (containerRef.current?.clientHeight || 600) / 2) / zoom - def.height / 2);
+    const desiredX = Math.round((-pan.x) / zoom + 24);
+    const desiredY = Math.round((-pan.y) / zoom + 24);
     const { x: placedX, y: placedY } = findFreeSlot(desiredX, desiredY, def.width, def.height);
     const newZ = maxZ;
     setMaxZ((z) => z + 1);
@@ -1606,8 +1613,8 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     const def = ELEMENT_DEFAULTS.hardware;
     const drop = pendingHardwareDropRef.current;
     pendingHardwareDropRef.current = null;
-    const centerX = drop ? drop.x : Math.round((-pan.x + (containerRef.current?.clientWidth || 800) / 2) / zoom - def.width / 2);
-    const centerY = drop ? drop.y : Math.round((-pan.y + (containerRef.current?.clientHeight || 600) / 2) / zoom - def.height / 2);
+    const centerX = drop ? drop.x : Math.round((-pan.x) / zoom + 24);
+    const centerY = drop ? drop.y : Math.round((-pan.y) / zoom + 24);
     const newZ = maxZ;
     setMaxZ((z) => z + 1);
     try {
@@ -4515,8 +4522,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         <TooltipTrigger asChild>
           <button
             type="button"
-            className={`h-6 px-1.5 rounded text-[9px] uppercase tracking-wider inline-flex items-center gap-1 ${meta.className}`}
-            style={{ fontFamily: "var(--font-mono)" }}
+            className={`${STATUS_BADGE_BASE} ${meta.className}`}
             onClick={(e) => {
               e.stopPropagation();
               cycleStatusForElement(el.id);
@@ -5428,7 +5434,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
             <button
               key={s}
               type="button"
-              className={`px-1.5 py-0.5 rounded text-[9px] font-mono uppercase tracking-wider transition-colors ${status === s ? STATUS_CHIP[s].className : "text-muted-foreground hover:bg-primary/10"}`}
+              className={`${STATUS_BADGE_BASE} ${status === s ? STATUS_CHIP[s].className : "text-muted-foreground hover:bg-primary/10"}`}
               onClick={() => handleUpdateContent(el.id, { ...c, status: s })}
               data-testid={`surface-status-${s}-${el.id}`}
             >{STATUS_CHIP[s].label}</button>
@@ -5436,8 +5442,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         </div>
       ) : (
         <span
-          className={`inline-block text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-sm ${statusChip.className}`}
-          style={{ fontFamily: "var(--font-mono)" }}
+          className={`${STATUS_BADGE_BASE} ${statusChip.className}`}
           data-testid={`chip-surface-status-${el.id}`}
         >
           {statusChip.label}
@@ -5469,8 +5474,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
               <span className="absolute bottom-2 left-3 text-xs text-white/80" style={{ fontFamily: "var(--font-mono)" }}>{(c.hex || c.color || "#1E3A2F").toUpperCase()}</span>
               {typeof c.lrv === "number" && (
                 <span
-                  className="absolute top-2 right-2 text-[10px] px-1.5 py-0.5 rounded-sm bg-black/35 text-white"
-                  style={{ fontFamily: "var(--font-mono)" }}
+                  className={`absolute top-2 right-2 ${META_BADGE_BASE} bg-black/35 text-white/85`}
                   data-testid={`chip-surface-lrv-${el.id}`}
                 >
                   LRV {c.lrv}
@@ -5549,8 +5553,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                       {c.room && (
                         <span
-                          className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted text-muted-foreground uppercase tracking-wider"
-                          style={{ fontFamily: "var(--font-mono)" }}
+                          className={`${META_BADGE_BASE} uppercase tracking-wider`}
                           data-testid={`chip-surface-room-${el.id}`}
                         >
                           {c.room}
@@ -5700,8 +5703,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                 </div>
                 {c.category && (
                   <span
-                    className="inline-block mt-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-muted text-muted-foreground"
-                    style={{ fontFamily: "var(--font-mono)" }}
+                    className={`${META_BADGE_BASE} uppercase tracking-wider mt-1`}
                     data-testid={`chip-surface-material-category-${el.id}`}
                   >
                     {c.category}
@@ -5825,8 +5827,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                 {priceLabel || <span className="text-muted-foreground/60">—</span>}
               </div>
               <span
-                className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-sm inline-flex items-center gap-1 ${chip.className}`}
-                style={{ fontFamily: "var(--font-mono)" }}
+                className={`${STATUS_BADGE_BASE} ${chip.className}`}
                 data-testid={`chip-hardware-status-${el.id}`}
               >
                 {chip.withCheck && <Check className="h-2.5 w-2.5" strokeWidth={2.5} />}
@@ -6111,7 +6112,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                       <button
                         key={s}
                         type="button"
-                        className={`px-1.5 py-0.5 rounded text-[9px] font-mono uppercase tracking-wider transition-colors ${cur === s ? STATUS_CHIP[s].className : "text-muted-foreground hover:bg-primary/10"}`}
+                        className={`${STATUS_BADGE_BASE} ${cur === s ? STATUS_CHIP[s].className : "text-muted-foreground hover:bg-primary/10"}`}
                         onClick={() => handleUpdateContent(el.id, { ...c, status: s })}
                         data-testid={`product-status-${s}-${el.id}`}
                       >{STATUS_CHIP[s].label}</button>
@@ -6128,8 +6129,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                 {c.supplier && <div className="text-[10px] text-muted-foreground mt-0.5">{c.supplier}</div>}
                 {c.room && (
                   <span
-                    className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded-sm bg-muted text-muted-foreground uppercase tracking-wider"
-                    style={{ fontFamily: "var(--font-mono)" }}
+                    className={`${META_BADGE_BASE} uppercase tracking-wider mt-1`}
                     data-testid={`chip-product-room-${el.id}`}
                   >
                     {c.room}
@@ -6765,7 +6765,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     <div className="flex flex-col h-full overflow-hidden" data-testid="spatial-canvas-root">
       {/* Top toolbar — split into two clusters: board management (left) and canvas controls (right).
           Opaque background + relative+z so canvas content can never bleed through behind it. */}
-      <div className="flex items-center gap-1.5 mb-1 flex-wrap mobile-landscape:flex-nowrap mobile-landscape:overflow-x-auto mobile-landscape:mb-0 shrink-0 px-2 py-1.5 bg-card border-b border-border relative z-20" data-testid="canvas-top-toolbar">
+      <div className="flex items-center gap-1.5 mb-1 flex-wrap mobile-landscape:flex-nowrap mobile-landscape:overflow-x-auto mobile-landscape:mb-0 shrink-0 px-2 py-1 bg-card border-b border-border relative z-20" data-testid="canvas-top-toolbar">
         {/* Left cluster — board management */}
         <div className="flex items-center gap-1.5">
         {!isLoadingBoards && boards.length > 0 && (
@@ -6835,6 +6835,83 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
           </Button>
         )}
         </div>
+        {boards.length > 0 && selectedBoardId && !(boardMode === "library" && libraryView === "covers") && (
+          <>
+            <Separator orientation="vertical" className="h-5 mx-1.5 hidden md:block" />
+            <RoomTabStrip
+              elements={elementsList}
+              activeRoom={activeRoom}
+              onRoomChange={persistActiveRoom}
+              activeStatus={statusFilters.size > 0 ? Array.from(statusFilters)[0] : null}
+              onStatusChange={(s) => {
+                setStatusFilters(s ? new Set([s]) : new Set());
+                if (statusFilterKey) {
+                  try { localStorage.setItem(statusFilterKey, JSON.stringify(s ? [s] : [])); } catch {}
+                }
+              }}
+              savedRoomOrder={boardMode === "library" ? savedCategoryOrder : savedRoomOrder}
+              onRoomOrderChange={boardMode === "library" ? persistCategoryOrder : persistRoomOrder}
+              onAddRoom={(name) => {
+                if (boardMode === "library") createCategoryFromTabStrip({ name });
+                else createRoomFromTabStrip({ name });
+              }}
+              onRenameRoom={(oldName, newName) => {
+                if (boardMode === "library") renameCategoryEverywhere(oldName, newName);
+                else renameRoomEverywhere(oldName, newName);
+              }}
+              onDeleteRoom={(name) => {
+                if (lockLayout) return;
+                if (boardMode === "library") deleteCategoryEverywhere(name);
+                else deleteRoomEverywhere(name);
+              }}
+              onRenderRoom={
+                boardMode === "project" && (effectiveRole === "admin" || effectiveRole === "crew")
+                  ? (room) => setRenderRoomName(room)
+                  : undefined
+              }
+              onExportSpec={
+                boardMode === "project" && (effectiveRole === "admin" || effectiveRole === "crew")
+                  ? async (room) => {
+                      if (exportingSpecRoom) return;
+                      setExportingSpecRoom(room);
+                      try {
+                        const res = await fetch(`/api/projects/${projectId}/spec-sheet`, {
+                          method: "POST",
+                          credentials: "include",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ room }),
+                        });
+                        if (!res.ok) {
+                          let msg = "Couldn't generate spec sheet.";
+                          try { const data = await res.json(); if (data?.message) msg = data.message; } catch { /* ignore */ }
+                          toast({ title: "Spec sheet failed", description: msg, variant: "destructive" });
+                          return;
+                        }
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        const projectSafe = ((clientProject as any)?.name || "project")
+                          .replace(/[^a-z0-9-_ ]/gi, "")
+                          .replace(/\s+/g, "_");
+                        const roomSafe = room.replace(/[^a-z0-9-_ ]/gi, "").replace(/\s+/g, "_") || "room";
+                        a.download = `spec-sheet-${projectSafe}_${roomSafe}.pdf`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        URL.revokeObjectURL(url);
+                      } catch (err: any) {
+                        toast({ title: "Spec sheet failed", description: err?.message || "Network error", variant: "destructive" });
+                      } finally {
+                        setExportingSpecRoom(null);
+                      }
+                    }
+                  : undefined
+              }
+              inline
+            />
+          </>
+        )}
         <Separator orientation="vertical" className="h-5 mx-1.5 hidden md:block" />
         {(selectedBoard?.linked_user_ids?.length ?? 0) > 0 && (
           <div className="hidden md:flex items-center gap-1" data-testid="badges-linked-people">
@@ -6915,6 +6992,32 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         <div className="flex-1" />
         {/* Right cluster — canvas controls */}
         <div className="flex items-center gap-0.5">
+          {showSecondaryAxis && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  variant={filterExpanded ? "default" : "ghost"}
+                  className={`h-8 px-2 gap-1 ${filterExpanded ? "bg-[#2f4a3a] text-white hover:bg-[#2f4a3a]" : "hover:bg-primary/10 hover:text-primary"}`}
+                  onClick={() => setFilterExpanded((v) => !v)}
+                  aria-pressed={filterExpanded}
+                  aria-label="Toggle filters"
+                  data-testid="filter-toggle"
+                >
+                  <Filter className="h-3.5 w-3.5" />
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ fontFamily: "var(--font-mono)" }}>
+                    Filter
+                  </span>
+                  {secondaryChips.size > 0 && (
+                    <span className="ml-0.5 inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-primary-foreground/20 text-[9px] font-mono">
+                      {secondaryChips.size}
+                    </span>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">Filter by {secondaryAxis === "category" ? "category" : "room"}</TooltipContent>
+            </Tooltip>
+          )}
           {/* Library-mode view toggle — only visible on library boards. Lets the
               user switch between the curated covers showcase and the legacy
               chip-row + spatial canvas as a fallback. */}
@@ -7278,84 +7381,23 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
 
       {boards.length > 0 && selectedBoardId && !(boardMode === "library" && libraryView === "covers") && (
         <>
-          <RoomTabStrip
-            elements={elementsList}
-            activeRoom={activeRoom}
-            onRoomChange={persistActiveRoom}
-            activeStatus={statusFilters.size > 0 ? Array.from(statusFilters)[0] : null}
-            onStatusChange={(s) => {
-              setStatusFilters(s ? new Set([s]) : new Set());
-              if (statusFilterKey) {
-                try { localStorage.setItem(statusFilterKey, JSON.stringify(s ? [s] : [])); } catch {}
-              }
-            }}
-            savedRoomOrder={boardMode === "library" ? savedCategoryOrder : savedRoomOrder}
-            onRoomOrderChange={boardMode === "library" ? persistCategoryOrder : persistRoomOrder}
-            onAddRoom={(name) => {
-              if (boardMode === "library") createCategoryFromTabStrip({ name });
-              else createRoomFromTabStrip({ name });
-            }}
-            onRenameRoom={(oldName, newName) => {
-              if (boardMode === "library") renameCategoryEverywhere(oldName, newName);
-              else renameRoomEverywhere(oldName, newName);
-            }}
-            onDeleteRoom={(name) => {
-              if (lockLayout) return;
-              if (boardMode === "library") deleteCategoryEverywhere(name);
-              else deleteRoomEverywhere(name);
-            }}
-            onRenderRoom={
-              boardMode === "project" && (effectiveRole === "admin" || effectiveRole === "crew")
-                ? (room) => setRenderRoomName(room)
-                : undefined
-            }
-            onExportSpec={
-              boardMode === "project" && (effectiveRole === "admin" || effectiveRole === "crew")
-                ? async (room) => {
-                    if (exportingSpecRoom) return;
-                    setExportingSpecRoom(room);
-                    try {
-                      const res = await fetch(`/api/projects/${projectId}/spec-sheet`, {
-                        method: "POST",
-                        credentials: "include",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ room }),
-                      });
-                      if (!res.ok) {
-                        let msg = "Couldn't generate spec sheet.";
-                        try { const data = await res.json(); if (data?.message) msg = data.message; } catch { /* ignore */ }
-                        toast({ title: "Spec sheet failed", description: msg, variant: "destructive" });
-                        return;
-                      }
-                      const blob = await res.blob();
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      const projectSafe = ((clientProject as any)?.name || "project")
-                        .replace(/[^a-z0-9-_ ]/gi, "")
-                        .replace(/\s+/g, "_");
-                      const roomSafe = room.replace(/[^a-z0-9-_ ]/gi, "").replace(/\s+/g, "_") || "room";
-                      a.download = `spec-sheet-${projectSafe}_${roomSafe}.pdf`;
-                      document.body.appendChild(a);
-                      a.click();
-                      a.remove();
-                      URL.revokeObjectURL(url);
-                    } catch (err: any) {
-                      toast({ title: "Spec sheet failed", description: err?.message || "Network error", variant: "destructive" });
-                    } finally {
-                      setExportingSpecRoom(null);
-                    }
-                  }
-                : undefined
-            }
-          />
-          {showSecondaryAxis && (
-            <SecondaryAxisChips
-              chips={secondaryOptions.map((name) => ({ id: name, label: name, count: secondaryCounts[name] ?? 0 }))}
-              selected={Array.from(secondaryChips)}
-              onToggle={toggleSecondaryChip}
-              label={secondaryAxis === "category" ? "Category" : "Room"}
-            />
+          {showSecondaryAxis && filterExpanded && (
+            <div className="flex items-center gap-1.5 px-2 py-1 bg-card border-b border-border/60 relative z-20" data-testid="secondary-axis-row">
+              <SecondaryAxisChips
+                chips={secondaryOptions.map((name) => ({ id: name, label: name, count: secondaryCounts[name] ?? 0 }))}
+                selected={Array.from(secondaryChips)}
+                onToggle={toggleSecondaryChip}
+                label={secondaryAxis === "category" ? "Category" : "Room"}
+              />
+              <button
+                type="button"
+                onClick={() => setFilterExpanded(false)}
+                className="ml-auto h-5 px-1.5 rounded-full text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors"
+                aria-label="Collapse filters"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
           )}
         </>
       )}
