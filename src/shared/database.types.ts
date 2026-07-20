@@ -796,6 +796,7 @@ export interface Database {
           created_by: string | null;
           created_at: string | null;
           updated_at: string | null;
+          is_mockup: boolean | null;
         };
         Insert: {
           board_id: number;
@@ -808,6 +809,7 @@ export interface Database {
           parent_column_id?: number | null;
           content?: Json | null;
           created_by?: string | null;
+          is_mockup?: boolean | null;
         };
         Update: {
           board_id?: number;
@@ -820,6 +822,7 @@ export interface Database {
           parent_column_id?: number | null;
           content?: Json | null;
           created_by?: string | null;
+          is_mockup?: boolean | null;
         };
         Relationships: never[];
       };

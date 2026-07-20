@@ -104,6 +104,7 @@ import type { CanvasElement, PlanningBoard as PlanningBoardType, PaintColor, Jso
 import { queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import { loadCanvasElements, createCanvasElement, updateCanvasElement, deleteCanvasElement } from "@/lib/canvas-api";
+import { createMockupElements, deleteMockupElements, MOCKUP_VARIANT_COUNT } from "@/lib/mockup-generator";
 import { supabase } from "@/lib/supabase";
 
 const SHEENS = ["Flat", "Eggshell", "Satin", "Semi-Gloss", "Gloss"] as const;
@@ -514,6 +515,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   const [selectedBoardId, setSelectedBoardId] = useState<number | null>(initialBoardFromUrl);
   const consumedUrlBoardRef = useRef<boolean>(false);
   const justCreatedBoardId = useRef<number | null>(null);
+  // Stashes the board id + name right after create so the load effect knows to
+  // seed mock-up starter elements once the (empty) board data arrives.
+  const pendingMockupSeed = useRef<{ boardId: number; roomName: string } | null>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
@@ -532,6 +536,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   const [saveTemplateBusy, setSaveTemplateBusy] = useState(false);
   const [saveTemplateError, setSaveTemplateError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showClearMockupConfirm, setShowClearMockupConfirm] = useState(false);
   const [showManageBoards, setShowManageBoards] = useState(false);
   const [showPresentation, setShowPresentation] = useState(false);
   const [showCritique, setShowCritique] = useState(false);
@@ -1106,7 +1111,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     // board appear empty (correct) until its real data arrives.
     setElements([]);
     loadCanvasElements(selectedBoardId)
-      .then((data: CanvasElement[]) => {
+      .then(async (data: CanvasElement[]) => {
         console.log(`[Board] Loaded ${data.length} elements for board ${selectedBoardId}`, data);
         setElements(data);
         if (data.length > 0) {
@@ -1116,6 +1121,21 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         if (data.length > 0 && lastAutoFitBoardId.current !== selectedBoardId) {
           lastAutoFitBoardId.current = selectedBoardId;
           scheduleAutoFit(data);
+        }
+        // Seed mock-up starter elements on freshly created empty boards.
+        if (pendingMockupSeed.current?.boardId === selectedBoardId && data.length === 0) {
+          const seed = pendingMockupSeed.current;
+          pendingMockupSeed.current = null;
+          try {
+            const mockupEls = await createMockupElements(selectedBoardId, projectId, seed.roomName, 1);
+            if (mockupEls.length > 0) {
+              setElements(mockupEls);
+              setMaxZ(Math.max(...mockupEls.map((e) => e.z_index)) + 1);
+              scheduleAutoFit(mockupEls);
+            }
+          } catch (err) {
+            console.error("[Board] Failed to seed mockup elements:", err);
+          }
         }
       })
       .catch((err) => {
@@ -1159,6 +1179,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       setSelectedBoardId(board.id);
       setBoardId(board.id);
       justCreatedBoardId.current = board.id;
+      pendingMockupSeed.current = { boardId: board.id, roomName: boardName };
       toast({ title: "Board created", description: board.name || boardName });
     } catch (err: any) {
       console.error("Board creation error:", err);
@@ -1190,6 +1211,38 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     queryClient.invalidateQueries({ queryKey: [api.calendar.list.path] });
     if (eventIdToDelete) {
       queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'activity'] });
+    }
+  };
+
+  const handleClearMockup = async () => {
+    if (!selectedBoardId) return;
+    try {
+      const count = await deleteMockupElements(selectedBoardId);
+      const remaining = Object.values(elements).filter((el) => !el.is_mockup);
+      setElements(remaining);
+      setShowClearMockupConfirm(false);
+      if (count > 0) toast({ title: "Mock-up cleared", description: `${count} starter element${count !== 1 ? "s" : ""} removed.` });
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to clear mock-up.", variant: "destructive" });
+    }
+  };
+
+  const handleRandomizeMockup = async () => {
+    if (!selectedBoardId) return;
+    try {
+      await deleteMockupElements(selectedBoardId);
+      const roomName = selectedBoard?.name || "Room";
+      const variantIndex = Math.floor(Math.random() * MOCKUP_VARIANT_COUNT);
+      const mockupEls = await createMockupElements(selectedBoardId, projectId, roomName, maxZ, variantIndex);
+      const remaining = Object.values(elements).filter((el) => !el.is_mockup);
+      setElements([...remaining, ...mockupEls]);
+      if (mockupEls.length > 0) {
+        setMaxZ(Math.max(...mockupEls.map((e) => e.z_index)) + 1);
+        scheduleAutoFit([...remaining, ...mockupEls]);
+      }
+      toast({ title: "New inspiration", description: "Fresh starter layout generated." });
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to generate new layout.", variant: "destructive" });
     }
   };
 
@@ -1837,10 +1890,13 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   const handleUpdateContent = async (id: number, content: any) => {
     const prev = elements[id];
     if (prev) pushUndo();
-    updateElement(id, { content });
+    // Clear mock-up flag the moment the user edits content — once touched,
+    // the element is real content and protected from bulk mock-up actions.
+    const clearMockup = prev?.is_mockup ? { is_mockup: false } : {};
+    updateElement(id, { content, ...clearMockup });
     sendElementUpdate(id, { content });
     try {
-      await updateCanvasElement(id, { content });
+      await updateCanvasElement(id, { content, ...clearMockup });
     } catch (err) {
       console.error("[Board] Failed to update element content", id, err);
       toast({ title: "Save failed", description: "Your edit wasn't saved to the server. It may not persist after refresh.", variant: "destructive" });
@@ -2695,6 +2751,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         }
         moveElement(draggedId, snappedX, snappedY);
         sendElementMove(draggedId, snappedX, snappedY);
+        if (el.is_mockup) {
+          updateElement(draggedId, { is_mockup: false });
+          updateCanvasElement(draggedId, { is_mockup: false }).catch(() => {});
+        }
         if (el.type === "room_zone") {
           zoneChildrenRef.current.forEach((zc) => {
             const cx = Math.round((snappedX + zc.offsetX) / GRID_SIZE) * GRID_SIZE;
@@ -3152,6 +3212,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         }
         moveElement(draggedId, snappedX, snappedY);
         sendElementMove(draggedId, snappedX, snappedY);
+        if (el.is_mockup) {
+          updateElement(draggedId, { is_mockup: false });
+          updateCanvasElement(draggedId, { is_mockup: false }).catch(() => {});
+        }
         if (el.type === "room_zone") {
           zoneChildrenRef.current.forEach((zc) => {
             const cx = Math.round((snappedX + zc.offsetX) / GRID_SIZE) * GRID_SIZE;
@@ -3179,6 +3243,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         const snappedX = Math.round(el.x / GRID_SIZE) * GRID_SIZE;
         const snappedY = Math.round(el.y / GRID_SIZE) * GRID_SIZE;
         updateElement(resizingId, { width: snappedW, height: snappedH });
+        if (el.is_mockup) {
+          updateElement(resizingId, { is_mockup: false });
+          updateCanvasElement(resizingId, { is_mockup: false }).catch(() => {});
+        }
         moveElement(resizingId, snappedX, snappedY);
         sendElementMove(resizingId, snappedX, snappedY);
       }
@@ -6828,6 +6896,12 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                     <Save className="h-4 w-4 mr-2" /> Save as template
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuItem onClick={() => setShowClearMockupConfirm(true)} data-testid="menu-clear-mockup">
+                  <Eraser className="h-4 w-4 mr-2" /> Clear mock-up
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleRandomizeMockup} data-testid="menu-randomize-mockup">
+                  <Sparkles className="h-4 w-4 mr-2" /> Randomize
+                </DropdownMenuItem>
                 <DropdownMenuItem className="text-destructive" onClick={() => setShowDeleteConfirm(true)} data-testid="menu-delete-board">
                   <Trash2 className="h-4 w-4 mr-2" /> Delete Board
                 </DropdownMenuItem>
@@ -8922,6 +8996,20 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
             <Button variant="destructive" onClick={handleDeleteBoard} data-testid="button-confirm-delete-board">Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showClearMockupConfirm} onOpenChange={setShowClearMockupConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Clear mock-up</DialogTitle>
+            <DialogDescription>Remove all auto-generated starter elements from this board.</DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">This will delete all mock-up elements. Any elements you&rsquo;ve edited will be kept. This cannot be undone.</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowClearMockupConfirm(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleClearMockup} data-testid="button-confirm-clear-mockup">Clear</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

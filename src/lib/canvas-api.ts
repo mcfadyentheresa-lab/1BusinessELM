@@ -25,6 +25,7 @@ export async function createCanvasElement(
     z_index: number;
     content?: Json | null;
     parent_column_id?: number | null;
+    is_mockup?: boolean | null;
   }
 ): Promise<CanvasElement> {
   const insert: CanvasElementInsert = { board_id: boardId, ...payload };
@@ -39,7 +40,7 @@ export async function createCanvasElement(
 
 export async function updateCanvasElement(
   id: number,
-  patch: Partial<Pick<CanvasElement, "content" | "x" | "y" | "width" | "height" | "z_index" | "parent_column_id">>
+  patch: Partial<Pick<CanvasElement, "content" | "x" | "y" | "width" | "height" | "z_index" | "parent_column_id" | "is_mockup">>
 ): Promise<void> {
   const { error } = await supabase
     .from("canvas_elements")
