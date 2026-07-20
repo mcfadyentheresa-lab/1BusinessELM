@@ -27,7 +27,7 @@ Deno.serve(async (req: Request) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const db = createClient(supabaseUrl, serviceKey);
 
-    let body: { check?: string } = {};
+    let body: { check?: string; debug?: boolean } = {};
     try {
       body = await req.json();
     } catch {
@@ -36,12 +36,22 @@ Deno.serve(async (req: Request) => {
     const requested = body.check ?? "all";
     const runAll = requested === "all";
 
+    const debug = body.debug === true;
     const summary = {
       check_a: 0,
       check_b: 0,
       check_c: 0,
       skipped_anthropic: false,
       errors: [] as string[],
+      classifications: [] as Array<{
+        message_id: number;
+        content: string;
+        is_scope_request: boolean | null;
+        description: string | null;
+        classified: boolean;
+        co_exists: boolean | null;
+        alert_inserted: boolean | null;
+      }>,
     };
 
     // Resolve last run time for Check C (before we update it)
@@ -181,10 +191,21 @@ Deno.serve(async (req: Request) => {
         } else {
           for (const msg of messages) {
             const classification = await classifyMessage(msg.content, anthropicKey);
+            if (debug) {
+              summary.classifications.push({
+                message_id: msg.id,
+                content: msg.content,
+                is_scope_request: classification ? classification.is_scope_request : null,
+                description: classification ? classification.description : null,
+                classified: !!classification,
+                co_exists: null,
+                alert_inserted: null,
+              });
+            }
             if (!classification || !classification.is_scope_request) continue;
 
             // Check for an existing change_order within 5 days after the message
-          const fiveDaysAfter = new Date(
+            const fiveDaysAfter = new Date(
               new Date(msg.created_at).getTime() + 5 * 24 * 60 * 60 * 1000,
             ).toISOString();
             const { count } = await db
@@ -194,7 +215,12 @@ Deno.serve(async (req: Request) => {
               .gte("created_at", msg.created_at)
               .lte("created_at", fiveDaysAfter);
 
-            if ((count ?? 0) > 0) continue; // a CO was already created
+            const coExists = (count ?? 0) > 0;
+            if (debug && summary.classifications.length > 0) {
+              const entry = summary.classifications.find((c) => c.message_id === msg.id);
+              if (entry) entry.co_exists = coExists;
+            }
+            if (coExists) continue; // a CO was already created
 
             const inserted = await insertAlert({
               project_id: msg.project_id,
@@ -205,6 +231,10 @@ Deno.serve(async (req: Request) => {
               source_type: "message",
               source_id: String(msg.id),
             });
+            if (debug && summary.classifications.length > 0) {
+              const entry = summary.classifications.find((c) => c.message_id === msg.id);
+              if (entry) entry.alert_inserted = inserted;
+            }
             if (inserted) summary.check_c++;
           }
         }
