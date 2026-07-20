@@ -2051,9 +2051,12 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   const rehostExternalImageUrl = useCallback(async (url: string): Promise<string | null> => {
     const trimmed = (url || "").trim();
     if (!trimmed || !/^https?:\/\//i.test(trimmed)) return null;
+    const supabaseHost = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
     const isAlreadyOurs =
       trimmed.startsWith("/objects/") ||
-      trimmed.startsWith(`${window.location.origin}/objects/`);
+      trimmed.startsWith(`${window.location.origin}/objects/`) ||
+      (supabaseHost ? trimmed.startsWith(`${supabaseHost}/storage/v1/object/public/project-assets/`) : false) ||
+      trimmed.startsWith("/storage/v1/object/public/project-assets/");
     if (isAlreadyOurs) return trimmed;
     try {
       const proxyRes = await fetch("/api/uploads/from-url", {
@@ -2908,11 +2911,15 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     // hotlink protection (Houzz, Pinterest, many CDNs return blank/blocked
     // when fetched cross-origin with the wrong Referer). The server fetches
     // the bytes, validates the content-type, and stores them in our bucket.
-    // If our own /objects/ path is already given, skip the proxy step.
+    // If the URL is already ours (legacy /objects/ path or a Supabase Storage
+    // public URL from the project-assets bucket), skip the proxy step.
     const trimmed = url.trim();
+    const supabaseHost = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, "");
     const isAlreadyOurs =
       trimmed.startsWith("/objects/") ||
-      trimmed.startsWith(`${window.location.origin}/objects/`);
+      trimmed.startsWith(`${window.location.origin}/objects/`) ||
+      (supabaseHost ? trimmed.startsWith(`${supabaseHost}/storage/v1/object/public/project-assets/`) : false) ||
+      trimmed.startsWith("/storage/v1/object/public/project-assets/");
     let finalUrl = trimmed;
     if (!isAlreadyOurs) {
       try {
@@ -6064,8 +6071,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                     // External http(s) URL → rehost through our bucket so it
                     // bypasses Referer-based hotlink protection (Houzz, Pinterest,
                     // most shop CDNs return blank when fetched cross-origin).
+                    const supabaseHost = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
                     const isExternal = /^https?:\/\//i.test(raw)
-                      && !raw.startsWith(`${window.location.origin}/objects/`);
+                      && !raw.startsWith(`${window.location.origin}/objects/`)
+                      && !(supabaseHost && raw.startsWith(`${supabaseHost}/storage/v1/object/public/project-assets/`));
                     if (isExternal) {
                       const rehosted = await rehostExternalImageUrl(raw);
                       if (rehosted) {
@@ -6992,7 +7001,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         <div className="flex-1" />
         {/* Right cluster — canvas controls */}
         <div className="flex items-center gap-0.5">
-          {showSecondaryAxis && (
+          {boards.length > 0 && selectedBoardId && !(boardMode === "library" && libraryView === "covers") && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -7008,14 +7017,14 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                   <span className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ fontFamily: "var(--font-mono)" }}>
                     Filter
                   </span>
-                  {secondaryChips.size > 0 && (
+                  {(secondaryChips.size > 0 || statusFilters.size > 0) && (
                     <span className="ml-0.5 inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-primary-foreground/20 text-[9px] font-mono">
-                      {secondaryChips.size}
+                      {secondaryChips.size + statusFilters.size}
                     </span>
                   )}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs">Filter by {secondaryAxis === "category" ? "category" : "room"}</TooltipContent>
+              <TooltipContent side="bottom" className="text-xs">Filter by status{showSecondaryAxis ? ` and ${secondaryAxis === "category" ? "category" : "room"}` : ""}</TooltipContent>
             </Tooltip>
           )}
           {/* Library-mode view toggle — only visible on library boards. Lets the
@@ -7187,34 +7196,39 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">Assets</TooltipContent>
           </Tooltip>
-          <Separator orientation="vertical" className="h-4 mx-1" />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-primary/10 hover:text-primary" onClick={handleUndo} disabled={undoStack.length === 0} data-testid="button-undo">
-                <Undo2 className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">Undo (Ctrl+Z)</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={toggleLockLayout}
-                aria-pressed={lockLayout}
-                aria-label="Lock layout"
-                data-testid="button-lock-layout"
-                className={`h-8 w-8 ${lockLayout ? "bg-primary/15 text-primary" : "hover:bg-primary/10 hover:text-primary"}`}
-              >
-                {lockLayout ? <Lock className="h-4 w-4" /> : <LockOpen className="h-4 w-4" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              {lockLayout ? "Layout locked — tap to unlock" : "Lock layout"}
-            </TooltipContent>
-          </Tooltip>
-          <InspirationLinks />
+          <Separator orientation="vertical" className="h-4 mx-1 hidden md:block" />
+          {/* Group: Layout actions */}
+          <div className="hidden md:flex items-center gap-0.5">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="icon" variant="ghost" className="h-8 w-8 hover:bg-primary/10 hover:text-primary" onClick={handleUndo} disabled={undoStack.length === 0} data-testid="button-undo">
+                  <Undo2 className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">Undo (Ctrl+Z)</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={toggleLockLayout}
+                  aria-pressed={lockLayout}
+                  aria-label="Lock layout"
+                  data-testid="button-lock-layout"
+                  className={`h-8 w-8 ${lockLayout ? "bg-primary/15 text-primary" : "hover:bg-primary/10 hover:text-primary"}`}
+                >
+                  {lockLayout ? <Lock className="h-4 w-4" /> : <LockOpen className="h-4 w-4" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                {lockLayout ? "Layout locked — tap to unlock" : "Lock layout"}
+              </TooltipContent>
+            </Tooltip>
+            <InspirationLinks />
+          </div>
+          <Separator orientation="vertical" className="h-4 mx-1 hidden md:block" />
+          {/* Group: View controls */}
           <div className="hidden md:flex items-center gap-0.5">
           <Separator orientation="vertical" className="h-4 mx-1" />
           <Tooltip>
@@ -7381,14 +7395,52 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
 
       {boards.length > 0 && selectedBoardId && !(boardMode === "library" && libraryView === "covers") && (
         <>
-          {showSecondaryAxis && filterExpanded && (
-            <div className="flex items-center gap-1.5 px-2 py-1 bg-card border-b border-border/60 relative z-20" data-testid="secondary-axis-row">
-              <SecondaryAxisChips
-                chips={secondaryOptions.map((name) => ({ id: name, label: name, count: secondaryCounts[name] ?? 0 }))}
-                selected={Array.from(secondaryChips)}
-                onToggle={toggleSecondaryChip}
-                label={secondaryAxis === "category" ? "Category" : "Room"}
-              />
+          {filterExpanded && (
+            <div className="flex items-center gap-2 px-2 py-1.5 bg-card border-b border-border/60 relative z-20 flex-wrap" data-testid="secondary-axis-row">
+              {/* Status filter pills — the single place where status filtering lives. */}
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mr-1">Status</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStatusFilters(new Set());
+                    if (statusFilterKey) { try { localStorage.setItem(statusFilterKey, JSON.stringify([])); } catch {} }
+                  }}
+                  className={`h-5 px-2 rounded-full text-[10px] font-medium transition-colors ${statusFilters.size === 0 ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:text-foreground"}`}
+                >
+                  All
+                </button>
+                {(["idea","shortlist","selected","ordered"] as const).map((s) => {
+                  const meta = STATUS_CHIP[s];
+                  const active = statusFilters.has(s);
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => {
+                        const next = new Set(statusFilters);
+                        if (next.has(s)) next.delete(s); else next.add(s);
+                        setStatusFilters(next);
+                        if (statusFilterKey) { try { localStorage.setItem(statusFilterKey, JSON.stringify(Array.from(next))); } catch {} }
+                      }}
+                      className={`h-5 px-2 rounded-full text-[10px] font-medium transition-colors ${active ? meta.className : "bg-muted text-muted-foreground hover:text-foreground"}`}
+                    >
+                      {meta.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {showSecondaryAxis && (
+                <>
+                  <Separator orientation="vertical" className="h-4" />
+                  <SecondaryAxisChips
+                    chips={secondaryOptions.map((name) => ({ id: name, label: name, count: secondaryCounts[name] ?? 0 }))}
+                    selected={Array.from(secondaryChips)}
+                    onToggle={toggleSecondaryChip}
+                    label={secondaryAxis === "category" ? "Category" : "Room"}
+                  />
+                </>
+              )}
               <button
                 type="button"
                 onClick={() => setFilterExpanded(false)}

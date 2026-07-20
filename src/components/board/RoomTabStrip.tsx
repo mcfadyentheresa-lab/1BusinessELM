@@ -144,7 +144,7 @@ export function RoomTabStrip({
   const counts = activeRoom !== undefined ? countByStatus(elements, activeRoom) : null;
 
   return (
-    <div className={inline ? "flex items-center min-h-[32px] min-w-0 flex-1" : "flex items-center border-b border-border bg-background/95 backdrop-blur-sm min-h-[40px]"}>
+    <div className={inline ? "flex items-center min-h-[32px] min-w-[180px] max-w-[520px] shrink" : "flex items-center border-b border-border bg-background/95 backdrop-blur-sm min-h-[40px]"}>
       {/* Room tabs — scrollable, grows to fill available space */}
       <div className={inline ? "flex items-center gap-0.5 py-0.5 overflow-x-auto scrollbar-none flex-1 min-w-0" : "flex items-center gap-0.5 px-2 py-1 overflow-x-auto scrollbar-none flex-1 min-w-0"}>
         {/* All rooms tab */}
@@ -191,7 +191,7 @@ export function RoomTabStrip({
               onClick={() => onRoomChange(room)}
             >
               <GripHorizontal className="h-2.5 w-2.5 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />
-              <span>{room}</span>
+              <span className="truncate max-w-[120px]">{room}</span>
               {counts && (
                 <span className={`text-[10px] px-1 rounded-full ${activeRoom === room ? "bg-primary/20 text-primary" : "bg-muted"}`}>
                   {Object.values(counts).reduce((a, b) => a + b, 0)}
@@ -267,47 +267,54 @@ export function RoomTabStrip({
         )}
       </div>
 
-      {/* Status filters + budget — fixed width, never scrolls */}
-      <div className={inline ? "flex items-center gap-1 py-0.5 shrink-0" : "flex items-center gap-1 px-2 py-1 shrink-0 border-l border-border/60"}>
-        <button
-          type="button"
-          onClick={() => onStatusChange(null)}
-          className={`h-5 px-2 rounded-full text-[10px] font-medium transition-colors ${
-            activeStatus === null
-              ? "bg-foreground text-background"
-              : "bg-muted text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          All
-        </button>
-        {ROOM_STATUSES.map((s) => (
+      {/* Budget summary — trailing, only when a room is active. In inline mode
+          we skip the status filter pills (those live in the toolbar's Filter
+          expanded row) and show only the budget chip. */}
+      {budget && budget.total > 0 && (
+        <div className={inline ? "flex items-center gap-1 py-0.5 shrink-0 ml-1 pl-2 border-l border-border/60" : "flex items-center gap-1 ml-1 pl-2 border-l border-border/60 shrink-0"}>
+          <DollarSign className="h-3 w-3 text-muted-foreground" />
+          <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+            {formatCad(budget.total)}
+            {budget.selected > 0 && (
+              <span className="text-amber-600 ml-1">({formatCad(budget.selected)})</span>
+            )}
+          </span>
+        </div>
+      )}
+
+      {/* Status filters — only in non-inline (standalone) mode. When inline,
+          status pills are rendered in the toolbar's Filter expanded row to
+          avoid duplication. */}
+      {!inline && (
+        <div className="flex items-center gap-1 px-2 py-1 shrink-0 border-l border-border/60">
           <button
-            key={s}
             type="button"
-            onClick={() => onStatusChange(activeStatus === s ? null : s)}
+            onClick={() => onStatusChange(null)}
             className={`h-5 px-2 rounded-full text-[10px] font-medium transition-colors ${
-              activeStatus === s
-                ? STATUS_COLORS[s]
+              activeStatus === null
+                ? "bg-foreground text-background"
                 : "bg-muted text-muted-foreground hover:text-foreground"
             }`}
           >
-            {STATUS_LABELS[s]}
-            {counts && <span className="ml-1 opacity-60">{counts[s]}</span>}
+            All
           </button>
-        ))}
-
-        {budget && budget.total > 0 && (
-          <div className="flex items-center gap-1 ml-1 pl-2 border-l border-border/60 shrink-0">
-            <DollarSign className="h-3 w-3 text-muted-foreground" />
-            <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-              {formatCad(budget.total)}
-              {budget.selected > 0 && (
-                <span className="text-amber-600 ml-1">({formatCad(budget.selected)})</span>
-              )}
-            </span>
-          </div>
-        )}
-      </div>
+          {ROOM_STATUSES.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => onStatusChange(activeStatus === s ? null : s)}
+              className={`h-5 px-2 rounded-full text-[10px] font-medium transition-colors ${
+                activeStatus === s
+                  ? STATUS_COLORS[s]
+                  : "bg-muted text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {STATUS_LABELS[s]}
+              {counts && <span className="ml-1 opacity-60">{counts[s]}</span>}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
