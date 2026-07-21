@@ -18,7 +18,7 @@ export function nextStatus(s: RoomStatus | undefined): RoomStatus {
 }
 
 export function isRoomable(el: CanvasElement): boolean {
-  return el.type === "hardware" || el.type === "surface" || el.type === "product";
+  return el.type === "hardware" || el.type === "surface" || el.type === "product" || el.type === "furniture_redesign";
 }
 
 export function isCategorizable(el: CanvasElement): boolean {
@@ -26,6 +26,7 @@ export function isCategorizable(el: CanvasElement): boolean {
     el.type === "hardware" ||
     el.type === "surface" ||
     el.type === "product" ||
+    el.type === "furniture_redesign" ||
     el.type === "image" ||
     el.type === "link"
   );

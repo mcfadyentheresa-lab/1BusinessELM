@@ -39,7 +39,6 @@ const Payroll = lazy(() => import("@/pages/Payroll"));
 const CrewAndTrade = lazy(() => import("@/pages/CrewAndTrade"));
 const SupplierPrices = lazy(() => import("@/pages/SupplierPrices"));
 const MasterCalendar = lazy(() => import("@/pages/MasterCalendar"));
-const TableRedesignPlanner = lazy(() => import("@/pages/TableRedesignPlanner"));
 const CostEstimator = lazy(() => import("@/pages/CostEstimator"));
 const ProjectSettings = lazy(() => import("@/pages/ProjectSettings"));
 const Login = lazy(() => import("@/pages/Login"));
@@ -141,7 +140,6 @@ function Router() {
                 <Route path="/crew-and-trade">{() => <RoleGuard component={CrewAndTrade} allowedRoles={["admin", "crew"]} />}</Route>
                 <Route path="/supplier-prices">{() => <RoleGuard component={SupplierPrices} allowedRoles={["admin"]} />}</Route>
                 <Route path="/master-calendar">{() => <RoleGuard component={MasterCalendar} allowedRoles={["admin", "crew"]} />}</Route>
-                <Route path="/table-redesign">{() => <RoleGuard component={TableRedesignPlanner} allowedRoles={["admin"]} />}</Route>
                 <Route component={NotFound} />
               </Switch>
             </AppShell>

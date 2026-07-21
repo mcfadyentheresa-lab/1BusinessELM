@@ -49,11 +49,12 @@ import {
   Spline, MoveRight, Slash, Droplet,
   Play, Globe, Star, History, AlertTriangle, Settings,
   Pin, Layers, Armchair, Image as ImageIcon, Grid3x3, Crop as CropIcon, RotateCcw,
-  ChevronDown, Filter,
+  ChevronDown, Filter, Sofa, Ruler,
 } from "lucide-react";
 import { DESIGNER_SUPPLIER_GROUPS } from "@/lib/designer-suppliers";
 import LibraryCollectionsView from "@/components/board/LibraryCollectionsView";
 import { FurnitureSidePanel } from "@/components/board/FurnitureSidePanel";
+import { PIECE_TYPES } from "@/components/board/FurniturePlannerPanel";
 import { MaterialsDrawer } from "@/components/board/MaterialsDrawer";
 import HardwarePickerDialog, { type HardwareDraft } from "@/components/board/HardwarePickerDialog";
 import { ImageCropDialog } from "@/components/ImageCropDialog";
@@ -378,6 +379,29 @@ const ELEMENT_DEFAULTS: Record<string, { width: number; height: number; content:
   room_zone: { width: 500, height: 400, content: { title: "Room Name", color: "#f0ede8", opacity: 0.5 } },
   product: { width: 240, height: 270, content: { name: "Product", price: "", supplier: "", url: "", imageUrl: "", status: "idea" } },
   hardware: { width: 240, height: 290, content: { category: "pull", name: "New hardware", status: "idea", currency: "CAD" } },
+  furniture_redesign: {
+    width: 260,
+    height: 320,
+    content: {
+      piece_name: "New furniture piece",
+      piece_type: "dining_table",
+      table_shape: "",
+      dimensions: { length: null, width: null, height: null, thickness: null },
+      weight_class: "unknown",
+      existing_material: "",
+      redesign_scope: "full",
+      proposed_base_type: "",
+      style_direction: "",
+      finish_direction: "",
+      before_image_url: "",
+      inspiration_image_url: "",
+      concept_image_url: "",
+      concept_title: "",
+      concept_description: "",
+      notes: "",
+      status: "idea",
+    },
+  },
   connector: { width: 0, height: 0, content: { fromId: 0, toId: 0, style: "arrow", curve: "curved" } },
 };
 
@@ -1551,7 +1575,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     const baseContent: any = { ...def.content };
     if (activeRoom) {
       const targetField = (selectedBoard as any)?.mode === "library" ? "category" : "room";
-      const allowsRoom = persistedType === "hardware" || persistedType === "surface" || persistedType === "product";
+      const allowsRoom = persistedType === "hardware" || persistedType === "surface" || persistedType === "product" || persistedType === "furniture_redesign";
       const allowsCategory = allowsRoom || persistedType === "image" || persistedType === "link";
       if (targetField === "room" && allowsRoom) baseContent.room = activeRoom;
       else if (targetField === "category" && allowsCategory) baseContent.category = activeRoom;
@@ -2384,6 +2408,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
             i: "image",
             c: "color_swatch",
             h: "hardware",
+            f: "furniture_redesign",
             d: "draw",
             a: "connect",
           };
@@ -5944,6 +5969,139 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       );
     }
 
+    if (el.type === "furniture_redesign") {
+      const status = (c.status as keyof typeof STATUS_CHIP) || "idea";
+      const chip = STATUS_CHIP[status] || STATUS_CHIP.idea;
+      const pieceTypeLabel = PIECE_TYPES.find((t) => t.value === c.piece_type)?.label || String(c.piece_type || "furniture").replace(/_/g, " ");
+      const labelTop = [pieceTypeLabel, c.room].filter(Boolean).join(" · ");
+      const dims = c.dimensions as { length?: number | null; width?: number | null; height?: number | null; thickness?: number | null } | undefined;
+      const dimsLabel = [dims?.length, dims?.width, dims?.height].filter((v) => v != null && Number.isFinite(v)).map((v) => `${v}″`).join(" × ");
+      const displayImage = c.concept_image_url || c.before_image_url || c.inspiration_image_url;
+
+      return (
+        <div
+          key={el.id}
+          className={`${cardBase} bg-card border border-border overflow-hidden cursor-grab`}
+          style={{ left: el.x, top: el.y, width: el.width, zIndex: effectiveZ }}
+          onMouseDown={(e) => {
+            const tag = (e.target as HTMLElement).tagName.toLowerCase();
+            if (tag === "input" || tag === "textarea" || tag === "button" || tag === "select" || (e.target as HTMLElement).closest("button") || (e.target as HTMLElement).closest("a")) return;
+            startDrag(el.id, e);
+          }}
+          onClick={handleClick}
+          onDoubleClick={handleDoubleClick}
+          onContextMenu={(e) => openContextMenu(e, el.id)}
+          onTouchStart={handleElementTouchStart(el.id)}
+          onTouchEnd={handleLongPressEnd}
+          onTouchCancel={handleLongPressEnd}
+          data-testid={`element-furniture-redesign-${el.id}`}
+        >
+          {renderStatusEdge(el)}
+          <div className="h-[160px] bg-muted overflow-hidden relative select-none group">
+            {displayImage ? (
+              <img
+                src={displayImage}
+                alt={c.piece_name || "Furniture"}
+                className="w-full h-full object-cover"
+                style={{ filter: "saturate(0.88) contrast(0.97)" }}
+                draggable={false}
+                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+              />
+            ) : (
+              <div
+                className="w-full h-full flex flex-col items-center justify-center gap-1 pointer-events-none"
+                style={{ background: "linear-gradient(135deg, #f4ede0 0%, #ede4d3 100%)" }}
+              >
+                <Sofa className="h-7 w-7 text-foreground/30" strokeWidth={1.5} />
+                <span
+                  className="text-[10px] uppercase tracking-wider text-foreground/40"
+                  style={{ fontFamily: "var(--font-mono)" }}
+                >
+                  Concept photo
+                </span>
+              </div>
+            )}
+            {(isSelected || !displayImage) && (
+              <label
+                className="absolute bottom-1.5 right-1.5 flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium uppercase tracking-wider bg-background/85 backdrop-blur-sm border border-border/60 hover:bg-background cursor-pointer transition-colors shadow-sm"
+                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{ fontFamily: "var(--font-mono)" }}
+                data-testid={`furniture-redesign-upload-${el.id}`}
+              >
+                <Upload className="h-3 w-3" />
+                {displayImage ? "Replace" : "Upload"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const url = await uploadImageFile(file);
+                    if (url) handleUpdateContent(el.id, { ...c, concept_image_url: url });
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            )}
+          </div>
+          <div className="p-3 flex flex-col gap-1.5 pointer-events-none select-none">
+            <div
+              className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground truncate"
+              style={{ fontFamily: "var(--font-mono)" }}
+              data-testid={`text-furniture-redesign-meta-${el.id}`}
+            >
+              {labelTop || "furniture redesign"}
+            </div>
+            <div className="text-sm font-semibold leading-snug line-clamp-2" data-testid={`text-furniture-redesign-name-${el.id}`}>
+              {c.piece_name || "New furniture piece"}
+            </div>
+            {dimsLabel && (
+              <div className="text-[10px] text-muted-foreground/80 truncate" style={{ fontFamily: "var(--font-mono)" }} data-testid={`text-furniture-redesign-dims-${el.id}`}>
+                {dimsLabel}
+              </div>
+            )}
+            {(c.style_direction || c.finish_direction) && (
+              <div className="text-[11px] text-muted-foreground truncate italic">
+                {[c.style_direction, c.finish_direction].filter(Boolean).join(" · ")}
+              </div>
+            )}
+            <div className="flex items-center justify-between gap-2 pt-0.5">
+              <div className="text-[10px] text-muted-foreground/70 truncate" style={{ fontFamily: "var(--font-mono)" }}>
+                {c.weight_class && c.weight_class !== "unknown" ? c.weight_class : <span className="text-muted-foreground/50">—</span>}
+              </div>
+              <span
+                className={`${STATUS_BADGE_BASE} ${chip.className}`}
+                data-testid={`chip-furniture-redesign-status-${el.id}`}
+              >
+                {chip.withCheck && <Check className="h-2.5 w-2.5" strokeWidth={2.5} />}
+                {chip.label}
+              </span>
+            </div>
+            {c.notes && (
+              <div className="text-[11px] text-muted-foreground line-clamp-2">{c.notes}</div>
+            )}
+            <div className="pointer-events-auto">
+              {renderLinkHealthChip(el)}
+              {isSelected && renderQuantityStepper(el)}
+              {isSelected && renderCategoryField(el)}
+            </div>
+          </div>
+          {isSelected && (
+            <div className="absolute -top-8 right-0 flex items-center gap-1">
+              {renderCompareChip(el)}
+              {renderStatusCycleChip(el)}
+              {renderOpenButton()}
+              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => handleDeleteElement(el.id)} data-testid={`button-delete-${el.id}`}>
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     if (el.type === "product") {
       return (
         <div
@@ -6720,6 +6878,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         { type: "surface-material", icon: Shapes, label: "Material" },
         ...(effectiveRole === "client" ? [] : [{ type: "hardware", icon: Wrench, label: "Hardware" }]),
         { type: "product", icon: Armchair, label: "Product" },
+        { type: "furniture_redesign", icon: Sofa, label: "Furniture Redesign" },
       ],
     },
     {
@@ -6792,6 +6951,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
           ? []
           : [{ type: "hardware", icon: Wrench, label: "Hardware", hint: "Pull, knob, faucet — typed", key: "H" }]),
         { type: "product", icon: Armchair, label: "Product", hint: "Furniture, lighting, decor", key: "P" },
+        { type: "furniture_redesign", icon: Sofa, label: "Furniture Redesign", hint: "Redesign concept for a piece", key: "F" },
       ],
     },
     {

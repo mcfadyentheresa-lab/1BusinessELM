@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Armchair, ChevronRight, ChevronLeft, GripVertical, X } from "lucide-react";
-import { FurniturePlannerPanel } from "@/pages/TableRedesignPlanner";
+import { FurniturePlannerPanel } from "@/components/board/FurniturePlannerPanel";
 
 interface FurnitureSidePanelProps {
   boardId: number | null;

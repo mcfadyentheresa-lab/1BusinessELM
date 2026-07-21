@@ -18,7 +18,6 @@ import {
   Calendar,
   Settings,
   LogOut,
-  Sofa,
   ShoppingCart,
   Menu,
   Moon,
@@ -52,7 +51,6 @@ const NAV_GROUPS = [
     label: "Resources",
     items: [
       { href: "/supplier-prices", label: "Pricing Book", icon: ShoppingCart, roles: ["admin"] },
-      { href: "/table-redesign", label: "Furniture Planner", icon: Sofa, roles: ["admin"] },
     ],
   },
   {
