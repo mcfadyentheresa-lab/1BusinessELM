@@ -13,7 +13,8 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle } from "lucide-react";
+import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle, Info } from "lucide-react";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 interface LineItem {
   id?: number;
@@ -59,6 +60,52 @@ function calcItemTotal(item: LineItem): number {
   const labor = parseFloat(item.unit_cost || "0") * qty;
   const material = parseFloat(item.material_cost || "0") * qty;
   return labor + material;
+}
+
+const UNIT_LABEL: Record<string, string> = {
+  sq_ft: "sq ft",
+  linear_ft: "linear ft",
+  hour: "hour",
+  unit: "unit",
+  day: "day",
+};
+
+function labourPlaceholder(unitType: string): string {
+  const label = UNIT_LABEL[unitType] ?? "unit";
+  if (unitType === "hour") return "Labour per hour (total crew)";
+  if (unitType === "day") return "Labour per day (total crew)";
+  return `Labour per ${label}`;
+}
+
+function materialPlaceholder(unitType: string): string {
+  const label = UNIT_LABEL[unitType] ?? "unit";
+  return `Material per ${label}`;
+}
+
+function formatQty(q: string): string {
+  const n = parseFloat(q || "0");
+  if (!isFinite(n) || n === 0) return "0";
+  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+function formatRate(r: string): string {
+  const n = parseFloat(r || "0");
+  if (!isFinite(n)) return "0.00";
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function itemMathCaption(item: LineItem): { labour: string; material: string } | null {
+  const unitLabel = UNIT_LABEL[item.unit_type] ?? "unit";
+  const qty = parseFloat(item.quantity || "0");
+  const labourRate = parseFloat(item.unit_cost || "0");
+  const materialRate = parseFloat(item.material_cost || "0");
+  if (qty === 0 && labourRate === 0 && materialRate === 0) return null;
+  const labourTotal = labourRate * qty;
+  const materialTotal = materialRate * qty;
+  return {
+    labour: `${formatQty(item.quantity)} ${unitLabel} × ${formatRate(item.unit_cost)}/${unitLabel} = ${formatCurrency(labourTotal)} labour`,
+    material: `${formatQty(item.quantity)} ${unitLabel} × ${formatRate(item.material_cost)}/${unitLabel} = ${formatCurrency(materialTotal)} material`,
+  };
 }
 
 export default function CostEstimator() {
@@ -376,11 +423,28 @@ export default function CostEstimator() {
                         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
                         <Input
                           className="h-8 text-xs pl-5"
-                          placeholder="Labour/unit"
+                          placeholder={labourPlaceholder(item.unit_type)}
                           value={item.unit_cost}
                           onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, unit_cost: e.target.value } : it))}
                           disabled={isLocked}
                         />
+                        {(item.unit_type === "hour" || item.unit_type === "day") && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                                aria-label="Labour rate guidance"
+                                tabIndex={-1}
+                              >
+                                <Info className="h-3 w-3" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="max-w-[220px] text-xs leading-snug">
+                              Enter the total cost for this rate, not a per-person rate. E.g. 3 workers at $75/hr = enter $225.
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
                       </div>
                     </div>
                     <div className="col-span-4 sm:col-span-2">
@@ -388,7 +452,7 @@ export default function CostEstimator() {
                         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
                         <Input
                           className="h-8 text-xs pl-5"
-                          placeholder="Material/unit"
+                          placeholder={materialPlaceholder(item.unit_type)}
                           value={item.material_cost}
                           onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, material_cost: e.target.value } : it))}
                           disabled={isLocked}
@@ -409,6 +473,19 @@ export default function CostEstimator() {
                       )}
                     </div>
                   </div>
+                  {(() => {
+                    const cap = itemMathCaption(item);
+                    if (!cap) return null;
+                    const showLabour = parseFloat(item.unit_cost || "0") > 0;
+                    const showMaterial = parseFloat(item.material_cost || "0") > 0;
+                    if (!showLabour && !showMaterial) return null;
+                    return (
+                      <p className="px-3 pt-1.5 text-[10px] text-muted-foreground tabular-nums leading-snug" style={{ fontFamily: "var(--font-mono)" }}>
+                        {showLabour && <span className="mr-3">{cap.labour}</span>}
+                        {showMaterial && <span>{cap.material}</span>}
+                      </p>
+                    );
+                  })()}
                   {activeItemWarnings.length > 0 && (
                     <div className="ml-3 mr-3 mb-1 space-y-1.5">
                       {activeItemWarnings.map((w) => (
