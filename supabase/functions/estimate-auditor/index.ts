@@ -356,19 +356,27 @@ async function runMissingScopeCheck(
         model: "claude-haiku-4-5",
         max_tokens: 512,
         system:
-          "You are a construction cost estimating expert. " +
+          "You are a construction cost estimating expert reviewing a contractor's line items. " +
           "You ONLY output strict JSON. " +
-          'Respond with exactly: {"missing": ["item1", "item2", ...]}. ' +
-          "Each item should be a short plain-English description of a commonly-expected cost category or scope item that appears to be missing from the estimate. " +
-          "Only include items that are genuinely likely to be missing based on the categories present. " +
-          "If nothing is missing, return an empty array. Do not include any other text.",
+          'Respond with exactly: {"missing": ["gap1", "gap2", ...]}. ' +
+          "IMPORTANT: This estimate is almost certainly PARTIAL and in-progress — it is not a finished estimate. " +
+          "Do NOT flag the absence of entire unrelated trades just because a complete project would eventually need them " +
+          "(e.g. do not flag 'no plumbing yet' on an estimate that only has insulation and painting — those trades may simply be added later). " +
+          "INSTEAD, identify only SPECIFIC, NON-OBVIOUS gaps that are IMPLIED by the line items that ARE already present — " +
+          "things a careful reviewer would catch because they commonly accompany, enable, or protect work already scoped. " +
+          "Examples of the kind of gap to flag: insulation present but no vapour barrier/air-sealing line; painting present but no surface prep/patching/priming line; drywall present but no taping/mudding line. " +
+          "Return AT MOST 3 gaps, and ONLY if you have genuine confidence they are relevant GIVEN WHAT IS ALREADY THERE. " +
+          "Return FEWER (including zero) rather than padding to reach 3 — an empty array is the correct answer when nothing genuinely implied is missing. " +
+          "Each gap must be a single short clause that JUSTIFIES the flag by tying it to what is already in the estimate " +
+          "(e.g. \"Insulation is present but no vapour barrier — commonly paired to control moisture\" rather than just \"Vapour barrier\"). " +
+          "Do not include any other text.",
         messages: [{
           role: "user",
           content:
             `Project: ${projectName ?? "Unknown"}\n` +
-            `Cost categories currently in the estimate: ${presentCategories.length > 0 ? presentCategories.join(", ") : "none"}.\n\n` +
-            "What commonly-expected cost categories or scope items are likely missing from this estimate? " +
-            "Consider standard residential renovation/construction scope.",
+            `Cost categories already in the estimate: ${presentCategories.length > 0 ? presentCategories.join(", ") : "none"}.\n\n` +
+            "This is a partial, in-progress estimate. Given ONLY the categories already present above, what specific, non-obvious scope gaps are implied by the existing line items? " +
+            "Do not list trades that are simply absent and could be added later. Only flag gaps that the existing line items imply should already be here. At most 3, fewer if you are not confident.",
         }],
       }),
     });
@@ -383,7 +391,8 @@ async function runMissingScopeCheck(
     if (!Array.isArray(missing)) return null;
     const messages = missing
       .filter((m): m is string => typeof m === "string" && m.trim().length > 0)
-      .map((m) => m.trim());
+      .map((m) => m.trim())
+      .slice(0, 3);
     return messages;
   } catch {
     return null;
