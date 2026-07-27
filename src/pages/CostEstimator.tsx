@@ -150,11 +150,12 @@ export default function CostEstimator() {
     queryKey: ["estimate-warnings", estimateId],
     queryFn: async () => {
       if (!estimateId) return [];
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("estimate_warnings")
         .select("id, estimate_item_id, estimate_id, warning_type, message, percent_diff, ignored")
-        .or(`estimate_id.eq.${estimateId},estimate_item_id.in.((${(estimate as any).items?.map((i: any) => i.id).join(",") ?? ""}))`)
+        .eq("estimate_id", estimateId)
         .order("id");
+      if (error) throw error;
       return (data ?? []) as EstimateWarning[];
     },
     enabled: !!estimateId,
