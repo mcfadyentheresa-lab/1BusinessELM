@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, Trash2, Lock, DollarSign, Loader2, Save } from "lucide-react";
+import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle } from "lucide-react";
 
 interface LineItem {
   id?: number;
@@ -24,6 +25,22 @@ interface LineItem {
   unit_cost: string;
   material_cost: string;
   notes: string;
+}
+
+interface EstimateWarning {
+  id: number;
+  estimate_item_id: number | null;
+  estimate_id: number | null;
+  warning_type: string;
+  message: string;
+  percent_diff: string | null;
+  ignored: boolean;
+}
+
+interface AuditResponse {
+  warnings: EstimateWarning[];
+  counts: Record<string, number>;
+  ai_parse_failed?: boolean;
 }
 
 const EMPTY_LINE_ITEM: LineItem = {
@@ -48,6 +65,7 @@ export default function CostEstimator() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const projectId = parseInt(id);
+  const { user } = useAuth();
 
   const { data: project } = useQuery({
     queryKey: ["project", projectId],
@@ -79,6 +97,22 @@ export default function CostEstimator() {
     },
   });
 
+  const estimateId = estimate?.id ?? null;
+
+  const { data: warnings = [], refetch: refetchWarnings } = useQuery<EstimateWarning[]>({
+    queryKey: ["estimate-warnings", estimateId],
+    queryFn: async () => {
+      if (!estimateId) return [];
+      const { data } = await supabase
+        .from("estimate_warnings")
+        .select("id, estimate_item_id, estimate_id, warning_type, message, percent_diff, ignored")
+        .or(`estimate_id.eq.${estimateId},estimate_item_id.in.((${(estimate as any).items?.map((i: any) => i.id).join(",") ?? ""}))`)
+        .order("id");
+      return (data ?? []) as EstimateWarning[];
+    },
+    enabled: !!estimateId,
+  });
+
   const [items, setItems] = useState<LineItem[]>([{ ...EMPTY_LINE_ITEM }]);
   const [markupEnabled, setMarkupEnabled] = useState(true);
   const [markupPct, setMarkupPct] = useState("25");
@@ -86,6 +120,9 @@ export default function CostEstimator() {
   const [managementFeeEnabled, setManagementFeeEnabled] = useState(false);
   const [managementFeePct, setManagementFeePct] = useState("15");
   const [saving, setSaving] = useState(false);
+  const [auditing, setAuditing] = useState(false);
+  const [auditCount, setAuditCount] = useState<number | null>(null);
+  const [showIgnored, setShowIgnored] = useState(false);
 
   useEffect(() => {
     if (estimate) {
@@ -118,11 +155,31 @@ export default function CostEstimator() {
   const managementFee = managementFeeEnabled ? subtotalWithMarkup * (parseFloat(managementFeePct || "0") / 100) : 0;
   const total = subtotalWithMarkup + managementFee;
 
+  const itemLevelByItem = useMemo(() => {
+    const map = new Map<number, EstimateWarning[]>();
+    for (const w of warnings) {
+      if (w.estimate_item_id != null) {
+        const arr = map.get(w.estimate_item_id) ?? [];
+        arr.push(w);
+        map.set(w.estimate_item_id, arr);
+      }
+    }
+    return map;
+  }, [warnings]);
+
+  const estimateLevelWarnings = useMemo(
+    () => warnings.filter((w) => w.estimate_id != null && w.estimate_item_id == null),
+    [warnings],
+  );
+  const activeEstimateLevel = estimateLevelWarnings.filter((w) => !w.ignored);
+  const ignoredEstimateLevel = estimateLevelWarnings.filter((w) => w.ignored);
+  const ignoredCount = warnings.filter((w) => w.ignored).length;
+
   const handleSave = async () => {
     setSaving(true);
     try {
-      let estimateId = estimate?.id;
-      if (!estimateId) {
+      let newEstimateId = estimate?.id;
+      if (!newEstimateId) {
         const { data, error } = await supabase.from("project_estimates").insert({
           project_id: projectId,
           name: "Main Estimate",
@@ -134,7 +191,7 @@ export default function CostEstimator() {
           management_fee_percent: managementFeePct,
         }).select("id").single();
         if (error) throw error;
-        estimateId = data.id;
+        newEstimateId = data.id;
       } else {
         await supabase.from("project_estimates").update({
           markup_enabled: markupEnabled,
@@ -142,12 +199,12 @@ export default function CostEstimator() {
           contingency_percent: contingencyPct,
           management_fee_enabled: managementFeeEnabled,
           management_fee_percent: managementFeePct,
-        }).eq("id", estimateId);
-        await supabase.from("estimate_items").delete().eq("estimate_id", estimateId);
+        }).eq("id", newEstimateId);
+        await supabase.from("estimate_items").delete().eq("estimate_id", newEstimateId);
       }
       if (items.length > 0) {
         const toInsert = items.map((item) => ({
-          estimate_id: estimateId,
+          estimate_id: newEstimateId,
           category_id: item.category_id ? parseInt(item.category_id) : null,
           custom_category: item.custom_category || null,
           room: item.room || null,
@@ -168,7 +225,56 @@ export default function CostEstimator() {
     setSaving(false);
   };
 
+  const handleAudit = async () => {
+    if (!estimateId) return;
+    setAuditing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({ title: "Not signed in", variant: "destructive" });
+        return;
+      }
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/estimate-auditor`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ estimate_id: estimateId }),
+      });
+      const json: AuditResponse = await res.json();
+      if (!res.ok) {
+        throw new Error(json && (json as any).error ? (json as any).error : `Audit failed (${res.status})`);
+      }
+      const totalWarnings = json.warnings?.length ?? 0;
+      setAuditCount(totalWarnings);
+      await refetchWarnings();
+      toast({ title: `Audit complete — ${totalWarnings} warning${totalWarnings !== 1 ? "s" : ""} found` });
+    } catch (e: any) {
+      toast({ title: "Audit failed", description: e.message, variant: "destructive" });
+    }
+    setAuditing(false);
+  };
+
+  const ignoreMutation = useMutation({
+    mutationFn: async ({ warningId, ignore }: { warningId: number; ignore: boolean }) => {
+      const patch = ignore
+        ? { ignored: true, ignored_by: user?.id ?? null, ignored_at: new Date().toISOString() }
+        : { ignored: false, ignored_by: null, ignored_at: null };
+      const { error } = await supabase.from("estimate_warnings").update(patch).eq("id", warningId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      refetchWarnings();
+      qc.invalidateQueries({ queryKey: ["estimate-warnings", estimateId] });
+    },
+    onError: (e: any) => {
+      toast({ title: "Update failed", description: e.message, variant: "destructive" });
+    },
+  });
+
   const isLocked = estimate?.status !== "draft" && estimate != null;
+  const busy = saving || auditing;
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -182,10 +288,26 @@ export default function CostEstimator() {
             {isLocked && <Badge variant="secondary" className="gap-1 shrink-0"><Lock className="h-3 w-3" /> Locked</Badge>}
           </div>
         </div>
-        <Button onClick={handleSave} disabled={saving || isLocked} className="gap-2 mt-1">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          Save estimate
-        </Button>
+        <div className="flex items-center gap-2 mt-1">
+          <Button
+            onClick={handleAudit}
+            disabled={!estimateId || busy || isLocked}
+            variant="outline"
+            className="gap-2 relative"
+          >
+            {auditing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+            Run Audit
+            {auditCount != null && auditCount > 0 && (
+              <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1 rounded-full bg-amber-500 text-white text-[10px] font-semibold flex items-center justify-center tabular-nums">
+                {auditCount}
+              </span>
+            )}
+          </Button>
+          <Button onClick={handleSave} disabled={busy || isLocked} className="gap-2">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Save estimate
+          </Button>
+        </div>
       </div>
 
       {/* Line items */}
@@ -196,93 +318,124 @@ export default function CostEstimator() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {items.map((item, idx) => (
-              <div key={idx} className="grid grid-cols-12 gap-2 items-start p-3 rounded-lg bg-muted/30 border border-border/60">
-                <div className="col-span-12 sm:col-span-3">
-                  <Select
-                    value={item.category_id}
-                    onValueChange={(v) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, category_id: v } : it))}
-                    disabled={isLocked}
-                  >
-                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Category…" /></SelectTrigger>
-                    <SelectContent>
-                      {(categories ?? []).map((c: any) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="col-span-6 sm:col-span-2">
-                  <Input
-                    className="h-8 text-xs"
-                    placeholder="Room"
-                    value={item.room}
-                    onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, room: e.target.value } : it))}
-                    disabled={isLocked}
-                  />
-                </div>
-                <div className="col-span-3 sm:col-span-1">
-                  <Input
-                    className="h-8 text-xs text-right"
-                    placeholder="Qty"
-                    value={item.quantity}
-                    onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, quantity: e.target.value } : it))}
-                    disabled={isLocked}
-                  />
-                </div>
-                <div className="col-span-3 sm:col-span-1">
-                  <Select
-                    value={item.unit_type}
-                    onValueChange={(v) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, unit_type: v } : it))}
-                    disabled={isLocked}
-                  >
-                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {["sq_ft", "linear_ft", "hour", "unit", "day"].map((u) => (
-                        <SelectItem key={u} value={u}>{u.replace(/_/g, " ")}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="col-span-4 sm:col-span-2">
-                  <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
-                    <Input
-                      className="h-8 text-xs pl-5"
-                      placeholder="Labour/unit"
-                      value={item.unit_cost}
-                      onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, unit_cost: e.target.value } : it))}
-                      disabled={isLocked}
-                    />
+            {items.map((item, idx) => {
+              const itemWarnings = item.id ? (itemLevelByItem.get(item.id) ?? []) : [];
+              const activeItemWarnings = itemWarnings.filter((w) => !w.ignored);
+              const ignoredItemWarnings = itemWarnings.filter((w) => w.ignored);
+              return (
+                <div key={idx}>
+                  <div className="grid grid-cols-12 gap-2 items-start p-3 rounded-lg bg-muted/30 border border-border/60">
+                    <div className="col-span-12 sm:col-span-3">
+                      <Select
+                        value={item.category_id}
+                        onValueChange={(v) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, category_id: v } : it))}
+                        disabled={isLocked}
+                      >
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Category…" /></SelectTrigger>
+                        <SelectContent>
+                          {(categories ?? []).map((c: any) => (
+                            <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="col-span-6 sm:col-span-2">
+                      <Input
+                        className="h-8 text-xs"
+                        placeholder="Room"
+                        value={item.room}
+                        onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, room: e.target.value } : it))}
+                        disabled={isLocked}
+                      />
+                    </div>
+                    <div className="col-span-3 sm:col-span-1">
+                      <Input
+                        className="h-8 text-xs text-right"
+                        placeholder="Qty"
+                        value={item.quantity}
+                        onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, quantity: e.target.value } : it))}
+                        disabled={isLocked}
+                      />
+                    </div>
+                    <div className="col-span-3 sm:col-span-1">
+                      <Select
+                        value={item.unit_type}
+                        onValueChange={(v) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, unit_type: v } : it))}
+                        disabled={isLocked}
+                      >
+                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {["sq_ft", "linear_ft", "hour", "unit", "day"].map((u) => (
+                            <SelectItem key={u} value={u}>{u.replace(/_/g, " ")}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="col-span-4 sm:col-span-2">
+                      <div className="relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
+                        <Input
+                          className="h-8 text-xs pl-5"
+                          placeholder="Labour/unit"
+                          value={item.unit_cost}
+                          onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, unit_cost: e.target.value } : it))}
+                          disabled={isLocked}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-span-4 sm:col-span-2">
+                      <div className="relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
+                        <Input
+                          className="h-8 text-xs pl-5"
+                          placeholder="Material/unit"
+                          value={item.material_cost}
+                          onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, material_cost: e.target.value } : it))}
+                          disabled={isLocked}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-span-3 sm:col-span-1 flex items-center justify-between">
+                      <span className="text-xs font-medium tabular-nums" style={{ fontFamily: "var(--font-mono)" }}>
+                        {formatCurrency(calcItemTotal(item))}
+                      </span>
+                      {!isLocked && (
+                        <button
+                          onClick={() => setItems((prev) => prev.filter((_, i) => i !== idx))}
+                          className="text-muted-foreground hover:text-destructive transition-colors ml-1"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="col-span-4 sm:col-span-2">
-                  <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
-                    <Input
-                      className="h-8 text-xs pl-5"
-                      placeholder="Material/unit"
-                      value={item.material_cost}
-                      onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, material_cost: e.target.value } : it))}
-                      disabled={isLocked}
-                    />
-                  </div>
-                </div>
-                <div className="col-span-3 sm:col-span-1 flex items-center justify-between">
-                  <span className="text-xs font-medium tabular-nums" style={{ fontFamily: "var(--font-mono)" }}>
-                    {formatCurrency(calcItemTotal(item))}
-                  </span>
-                  {!isLocked && (
-                    <button
-                      onClick={() => setItems((prev) => prev.filter((_, i) => i !== idx))}
-                      className="text-muted-foreground hover:text-destructive transition-colors ml-1"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                  {activeItemWarnings.length > 0 && (
+                    <div className="ml-3 mr-3 mb-1 space-y-1.5">
+                      {activeItemWarnings.map((w) => (
+                        <WarningRow
+                          key={w.id}
+                          warning={w}
+                          onIgnore={() => ignoreMutation.mutate({ warningId: w.id, ignore: true })}
+                          disabling={ignoreMutation.isPending}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {showIgnored && ignoredItemWarnings.length > 0 && (
+                    <div className="ml-3 mr-3 mb-1 space-y-1.5">
+                      {ignoredItemWarnings.map((w) => (
+                        <WarningRow
+                          key={w.id}
+                          warning={w}
+                          onUnignore={() => ignoreMutation.mutate({ warningId: w.id, ignore: false })}
+                          disabling={ignoreMutation.isPending}
+                        />
+                      ))}
+                    </div>
                   )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           {!isLocked && (
             <Button variant="outline" size="sm" className="mt-3 gap-2" onClick={() => setItems((p) => [...p, { ...EMPTY_LINE_ITEM }])}>
@@ -291,6 +444,51 @@ export default function CostEstimator() {
           )}
         </CardContent>
       </Card>
+
+      {/* Estimate-level warnings panel */}
+      {(activeEstimateLevel.length > 0 || (showIgnored && ignoredEstimateLevel.length > 0) || ignoredCount > 0) && (
+        <Card className="mb-4 border-amber-500/30">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                <CardTitle className="text-base">Estimate-level warnings</CardTitle>
+                {activeEstimateLevel.length > 0 && (
+                  <Badge variant="secondary" className="bg-amber-500/15 text-amber-700 border-amber-500/30">
+                    {activeEstimateLevel.length} active
+                  </Badge>
+                )}
+              </div>
+              {ignoredCount > 0 && (
+                <button
+                  onClick={() => setShowIgnored((s) => !s)}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showIgnored ? "Hide ignored" : `Show ignored (${ignoredCount})`}
+                </button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-1.5">
+            {activeEstimateLevel.map((w) => (
+              <WarningRow
+                key={w.id}
+                warning={w}
+                onIgnore={() => ignoreMutation.mutate({ warningId: w.id, ignore: true })}
+                disabling={ignoreMutation.isPending}
+              />
+            ))}
+            {showIgnored && ignoredEstimateLevel.map((w) => (
+              <WarningRow
+                key={w.id}
+                warning={w}
+                onUnignore={() => ignoreMutation.mutate({ warningId: w.id, ignore: false })}
+                disabling={ignoreMutation.isPending}
+              />
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Totals panel */}
       <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -352,6 +550,58 @@ export default function CostEstimator() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function WarningRow({
+  warning,
+  onIgnore,
+  onUnignore,
+  disabling,
+}: {
+  warning: EstimateWarning;
+  onIgnore?: () => void;
+  onUnignore?: () => void;
+  disabling: boolean;
+}) {
+  return (
+    <div
+      className={`flex items-start justify-between gap-3 rounded-md border px-3 py-2 text-xs ${
+        warning.ignored
+          ? "border-border/40 bg-muted/20 text-muted-foreground line-through"
+          : "border-amber-500/30 bg-amber-500/5 text-amber-900"
+      }`}
+    >
+      <div className="flex items-start gap-2 min-w-0">
+        <AlertTriangle className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${warning.ignored ? "text-muted-foreground" : "text-amber-500"}`} />
+        <div className="min-w-0">
+          <p className="leading-snug">{warning.message}</p>
+          {warning.percent_diff && !warning.ignored && (
+            <span className="inline-block mt-0.5 text-[10px] font-semibold text-amber-700 tabular-nums">
+              {warning.percent_diff}% variance
+            </span>
+          )}
+        </div>
+      </div>
+      {!warning.ignored && onIgnore && (
+        <button
+          onClick={onIgnore}
+          disabled={disabling}
+          className="shrink-0 text-[11px] font-medium text-amber-700 hover:text-amber-900 transition-colors disabled:opacity-50"
+        >
+          Ignore
+        </button>
+      )}
+      {warning.ignored && onUnignore && (
+        <button
+          onClick={onUnignore}
+          disabled={disabling}
+          className="shrink-0 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+        >
+          Unignore
+        </button>
+      )}
     </div>
   );
 }

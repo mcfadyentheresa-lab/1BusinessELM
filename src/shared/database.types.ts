@@ -149,6 +149,7 @@ export interface Database {
           budget_used: number | null;
           budget_visible_to_client: boolean | null;
           color_tag_id: number | null;
+          region: string | null;
           created_at: string | null;
         };
         Insert: {
@@ -172,6 +173,7 @@ export interface Database {
           budget_used?: number | null;
           budget_visible_to_client?: boolean | null;
           color_tag_id?: number | null;
+          region?: string | null;
         };
         Update: {
           name?: string;
@@ -194,6 +196,7 @@ export interface Database {
           budget_used?: number | null;
           budget_visible_to_client?: boolean | null;
           color_tag_id?: number | null;
+          region?: string | null;
         };
         Relationships: never[];
       };
@@ -1278,7 +1281,8 @@ export interface Database {
       estimate_warnings: {
         Row: {
           id: number;
-          estimate_item_id: number;
+          estimate_item_id: number | null;
+          estimate_id: number | null;
           warning_type: string;
           message: string;
           percent_diff: string | null;
@@ -1287,7 +1291,8 @@ export interface Database {
           ignored_at: string | null;
         };
         Insert: {
-          estimate_item_id: number;
+          estimate_item_id?: number | null;
+          estimate_id?: number | null;
           warning_type: string;
           message: string;
           percent_diff?: string | null;
@@ -1296,7 +1301,8 @@ export interface Database {
           ignored_at?: string | null;
         };
         Update: {
-          estimate_item_id?: number;
+          estimate_item_id?: number | null;
+          estimate_id?: number | null;
           warning_type?: string;
           message?: string;
           percent_diff?: string | null;
