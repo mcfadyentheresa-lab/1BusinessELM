@@ -178,7 +178,7 @@ Deno.serve(async (req: Request) => {
         const catName = item.cost_categories?.name ?? "this category";
         warnings.push({
           estimate_item_id: item.id,
-          estimate_id: null,
+          estimate_id: estimateId,
           warning_type: "price_outlier",
           message: `${catName}: unit cost $${unitCost.toFixed(2)} is outside the typical market range of $${low.toFixed(2)}–$${high.toFixed(2)} (typical: $${typical.toFixed(2)}).`,
           percent_diff: pctDiff,
@@ -191,7 +191,7 @@ Deno.serve(async (req: Request) => {
       if (item.category_id === null && item.custom_category) {
         warnings.push({
           estimate_item_id: item.id,
-          estimate_id: null,
+          estimate_id: estimateId,
           warning_type: "uncategorized",
           message: `Line item "${item.custom_category}" has no standard category assigned. Assign a real cost category for accurate reporting and market-rate comparison.`,
           percent_diff: null,
@@ -206,7 +206,7 @@ Deno.serve(async (req: Request) => {
       if ((isNaN(uc) || uc === 0) && (isNaN(mc) || mc === 0)) {
         warnings.push({
           estimate_item_id: item.id,
-          estimate_id: null,
+          estimate_id: estimateId,
           warning_type: "zero_cost",
           message: `This line item has $0.00 for both labour and material — it is likely incomplete.`,
           percent_diff: null,
@@ -226,7 +226,7 @@ Deno.serve(async (req: Request) => {
         const roomLabel = item.room ?? "no room";
         warnings.push({
           estimate_item_id: item.id,
-          estimate_id: null,
+          estimate_id: estimateId,
           warning_type: "duplicate",
           message: `Duplicate entry: "${catName}" in ${roomLabel} already appears ${count} time${count > 1 ? "s" : ""} in this estimate. Consolidate or confirm this is intentional.`,
           percent_diff: null,

@@ -169,7 +169,6 @@ export default function CostEstimator() {
   const [managementFeePct, setManagementFeePct] = useState("15");
   const [saving, setSaving] = useState(false);
   const [auditing, setAuditing] = useState(false);
-  const [auditCount, setAuditCount] = useState<number | null>(null);
   const [showIgnored, setShowIgnored] = useState(false);
 
   useEffect(() => {
@@ -222,6 +221,7 @@ export default function CostEstimator() {
   const activeEstimateLevel = estimateLevelWarnings.filter((w) => !w.ignored);
   const ignoredEstimateLevel = estimateLevelWarnings.filter((w) => w.ignored);
   const ignoredCount = warnings.filter((w) => w.ignored).length;
+  const activeWarningCount = warnings.filter((w) => !w.ignored).length;
 
   const handleSave = async () => {
     setSaving(true);
@@ -294,10 +294,9 @@ export default function CostEstimator() {
       if (!res.ok) {
         throw new Error(json && (json as any).error ? (json as any).error : `Audit failed (${res.status})`);
       }
-      const totalWarnings = json.warnings?.length ?? 0;
-      setAuditCount(totalWarnings);
-      await refetchWarnings();
-      toast({ title: `Audit complete — ${totalWarnings} warning${totalWarnings !== 1 ? "s" : ""} found` });
+      const fresh = await refetchWarnings();
+      const freshActive = (fresh.data ?? []).filter((w) => !w.ignored).length;
+      toast({ title: `Audit complete — ${freshActive} warning${freshActive !== 1 ? "s" : ""} found` });
     } catch (e: any) {
       toast({ title: "Audit failed", description: e.message, variant: "destructive" });
     }
@@ -345,9 +344,9 @@ export default function CostEstimator() {
           >
             {auditing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
             Run Audit
-            {auditCount != null && auditCount > 0 && (
+            {activeWarningCount > 0 && (
               <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1 rounded-full bg-amber-500 text-white text-[10px] font-semibold flex items-center justify-center tabular-nums">
-                {auditCount}
+                {activeWarningCount}
               </span>
             )}
           </Button>
