@@ -20,6 +20,8 @@ export function useAuth(): AuthState {
       } else {
         setIsLoading(false);
       }
+    }).catch(() => {
+      setIsLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
