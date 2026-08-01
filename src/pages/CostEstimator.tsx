@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle, Info, Package, Eye } from "lucide-react";
+import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle, Info, Package, Eye, Gauge } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 interface LineItem {
@@ -161,7 +161,7 @@ export default function CostEstimator() {
   const { data: project } = useQuery({
     queryKey: ["project", projectId],
     queryFn: async () => {
-      const { data } = await supabase.from("projects").select("name, code").eq("id", projectId).maybeSingle();
+      const { data } = await supabase.from("projects").select("name, code, region").eq("id", projectId).maybeSingle();
       return data;
     },
   });
@@ -315,6 +315,48 @@ export default function CostEstimator() {
   const ignoredCount = warnings.filter((w) => w.ignored).length;
   const activeWarningCount = auditWarnings.filter((w) => !w.ignored).length;
   const activeClientReviewCount = clientReviewWarnings.filter((w) => !w.ignored).length;
+
+  const confidenceScore = useMemo(() => {
+    const active = auditWarnings.filter((w) => !w.ignored);
+    const costComplCount = active.filter((w) => ["price_outlier", "zero_cost", "duplicate"].includes(w.warning_type)).length;
+    const scopeCount = active.filter((w) => w.warning_type === "missing_scope").length;
+    const uncategorizedCount = active.filter((w) => w.warning_type === "uncategorized").length;
+    const missingModCount = active.filter((w) => w.warning_type === "missing_modifier").length;
+    const clientClarityCount = clientReviewWarnings.filter((w) => !w.ignored && w.warning_type === "unclear_scope").length;
+
+    const hasRegion = project?.region != null;
+    const everChecked = warnings.length > 0;
+
+    type Band = "High" | "Medium" | "Low" | "Needs review" | "Not applicable";
+    const bandValue = (b: Band): number | null => {
+      if (b === "High") return 100;
+      if (b === "Medium") return 60;
+      if (b === "Low") return 20;
+      if (b === "Needs review") return 40;
+      return null;
+    };
+
+    const costBand: Band = costComplCount === 0 ? "High" : costComplCount <= 2 ? "Medium" : "Low";
+    const scopeBand: Band = scopeCount === 0 ? "High" : scopeCount <= 2 ? "Medium" : "Low";
+    const clientBand: Band = clientClarityCount === 0 ? "High" : clientClarityCount <= 2 ? "Medium" : "Low";
+    const uncategorizedBand: Band = uncategorizedCount === 0 ? "High" : "Needs review";
+    const regionalBand: Band = missingModCount > 0 ? "Needs review" : hasRegion ? "High" : "Not applicable";
+
+    const parts = [costBand, scopeBand, clientBand, uncategorizedBand, regionalBand];
+    const numeric = parts.map(bandValue).filter((v): v is number => v != null);
+    const overall = numeric.length > 0 ? Math.round(numeric.reduce((a, b) => a + b, 0) / numeric.length) : null;
+
+    return {
+      everChecked, overall,
+      subScores: [
+        { label: "Cost completeness", band: costBand, count: costComplCount, reason: costComplCount === 0 ? "no unresolved pricing warnings" : `${costComplCount} unresolved pricing warning${costComplCount !== 1 ? "s" : ""}` },
+        { label: "Scope completeness", band: scopeBand, count: scopeCount, reason: scopeCount === 0 ? "all expected scope items present" : `${scopeCount} missing scope warning${scopeCount !== 1 ? "s" : ""}` },
+        { label: "Client clarity", band: clientBand, count: clientClarityCount, reason: clientClarityCount === 0 ? "no unclear items flagged" : `${clientClarityCount} unclear item${clientClarityCount !== 1 ? "s" : ""}` },
+        { label: "Uncategorized items", band: uncategorizedBand, count: uncategorizedCount, reason: uncategorizedCount === 0 ? "all items categorized" : `${uncategorizedCount} uncategorized item${uncategorizedCount !== 1 ? "s" : ""}` },
+        { label: "Regional pricing", band: regionalBand, count: missingModCount, reason: missingModCount > 0 ? `${missingModCount} unresolved regional pricing warning${missingModCount !== 1 ? "s" : ""}` : hasRegion ? "regional modifiers applied" : "no region set for this project" },
+      ],
+    };
+  }, [auditWarnings, clientReviewWarnings, warnings, project?.region]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -726,6 +768,9 @@ export default function CostEstimator() {
         </CardContent>
       </Card>
 
+      {/* Estimate confidence score */}
+      <ConfidenceScoreCard score={confidenceScore} />
+
       {/* Estimate-level audit warnings panel */}
       {(activeEstimateLevel.length > 0 || (showIgnored && ignoredEstimateLevel.length > 0) || ignoredCount > 0) && (
         <Card className="mb-4 border-amber-500/30">
@@ -869,6 +914,82 @@ export default function CostEstimator() {
         </div>
       </div>
     </div>
+  );
+}
+
+type ConfidenceBand = "High" | "Medium" | "Low" | "Needs review" | "Not applicable";
+
+interface ConfidenceSubScore {
+  label: string;
+  band: ConfidenceBand;
+  count: number;
+  reason: string;
+}
+
+interface ConfidenceScore {
+  everChecked: boolean;
+  overall: number | null;
+  subScores: ConfidenceSubScore[];
+}
+
+const bandColor: Record<ConfidenceBand, string> = {
+  "High": "text-emerald-600",
+  "Medium": "text-amber-600",
+  "Low": "text-red-600",
+  "Needs review": "text-orange-600",
+  "Not applicable": "text-muted-foreground",
+};
+
+const bandBg: Record<ConfidenceBand, string> = {
+  "High": "bg-emerald-500/10 border-emerald-500/30",
+  "Medium": "bg-amber-500/10 border-amber-500/30",
+  "Low": "bg-red-500/10 border-red-500/30",
+  "Needs review": "bg-orange-500/10 border-orange-500/30",
+  "Not applicable": "bg-muted/20 border-border/40",
+};
+
+function ConfidenceScoreCard({ score }: { score: ConfidenceScore }) {
+  if (!score.everChecked) {
+    return (
+      <Card className="mb-4 border-border/40">
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Gauge className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base text-muted-foreground">Estimate Confidence</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <p className="text-sm text-muted-foreground">
+            Run an audit and client review to see an estimate confidence score
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const overall = score.overall ?? 0;
+  const overallColor = overall >= 80 ? "text-emerald-600" : overall >= 50 ? "text-amber-600" : "text-red-600";
+
+  return (
+    <Card className="mb-4">
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <Gauge className="h-4 w-4 text-primary" />
+          <CardTitle className="text-base">Estimate Confidence: <span className={overallColor}>{overall}%</span></CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0 space-y-2">
+        {score.subScores.map((s) => (
+          <div key={s.label} className={`flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-xs ${bandBg[s.band]}`}>
+            <div className="min-w-0">
+              <span className="font-medium">{s.label}:</span>{" "}
+              <span className={bandColor[s.band]}>{s.band}</span>{" "}
+              <span className="text-muted-foreground">({s.reason})</span>
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 
