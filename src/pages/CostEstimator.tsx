@@ -13,7 +13,9 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle, Info, Package, Eye, Gauge } from "lucide-react";
+import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle, Info, Package, Eye, Gauge, Sparkles } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 interface LineItem {
@@ -28,6 +30,7 @@ interface LineItem {
   notes: string;
   assembly_id: string | null;
   material_from_assembly: boolean;
+  ai_suggested: boolean;
 }
 
 interface EstimateWarning {
@@ -64,6 +67,7 @@ const EMPTY_LINE_ITEM: LineItem = {
   notes: "",
   assembly_id: null,
   material_from_assembly: false,
+  ai_suggested: false,
 };
 
 function calcItemTotal(item: LineItem): number {
@@ -249,6 +253,9 @@ export default function CostEstimator() {
   const [auditing, setAuditing] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [showIgnored, setShowIgnored] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [draftSuggestions, setDraftSuggestions] = useState<any[] | null>(null);
+  const [draftSelections, setDraftSelections] = useState<Record<number, { checked: boolean; assemblyId: string | null }>>({});
 
   useEffect(() => {
     if (estimate) {
@@ -270,6 +277,7 @@ export default function CostEstimator() {
           notes: i.notes ?? "",
           assembly_id: null,
           material_from_assembly: false,
+          ai_suggested: false,
         })));
       }
     }
@@ -491,7 +499,58 @@ export default function CostEstimator() {
   });
 
   const isLocked = estimate?.status !== "draft" && estimate != null;
-  const busy = saving || auditing || reviewing;
+  const busy = saving || auditing || reviewing || generating;
+
+  const handleGenerateDraft = async () => {
+    setGenerating(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({ title: "Not signed in", variant: "destructive" });
+        return;
+      }
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/estimate-generator`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session.access_token}` },
+        body: JSON.stringify({ project_id: projectId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? `Generate failed (${res.status})`);
+      setDraftSuggestions(json.suggestions ?? []);
+      setDraftSelections({});
+    } catch (e: any) {
+      toast({ title: "Generate draft failed", description: e.message, variant: "destructive" });
+    }
+    setGenerating(false);
+  };
+
+  const handleAddDraftItems = () => {
+    const selected = (draftSuggestions ?? []).filter((s) => draftSelections[s.category_id]?.checked);
+    if (selected.length === 0) {
+      setDraftSuggestions(null);
+      return;
+    }
+    const newItems: LineItem[] = selected.map((s) => {
+      const sel = draftSelections[s.category_id];
+      const chosenAssembly = sel?.assemblyId ? s.assemblies?.find((a: any) => String(a.id) === sel.assemblyId) : null;
+      const cat = (categories ?? []).find((c: any) => String(c.id) === String(s.category_id));
+      return {
+        ...EMPTY_LINE_ITEM,
+        category_id: String(s.category_id),
+        quantity: "",
+        unit_type: s.unit_type ?? cat?.default_unit_type ?? "sq_ft",
+        unit_cost: s.market_rate?.typical ?? "",
+        material_cost: chosenAssembly ? String(chosenAssembly.material_cost_per_unit) : "",
+        assembly_id: chosenAssembly ? String(chosenAssembly.id) : null,
+        material_from_assembly: !!chosenAssembly,
+        ai_suggested: true,
+      };
+    });
+    setItems((prev) => [...prev, ...newItems]);
+    setDraftSuggestions(null);
+    setDraftSelections({});
+    toast({ title: `Added ${newItems.length} draft line item${newItems.length !== 1 ? "s" : ""}` });
+  };
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -563,7 +622,7 @@ export default function CostEstimator() {
                     <div className="col-span-12 sm:col-span-3">
                       <Select
                         value={item.category_id}
-                        onValueChange={(v) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, category_id: v, assembly_id: null, material_from_assembly: false } : it))}
+                        onValueChange={(v) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, category_id: v, assembly_id: null, material_from_assembly: false, ai_suggested: false } : it))}
                         disabled={isLocked}
                       >
                         <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Category…" /></SelectTrigger>
@@ -579,7 +638,7 @@ export default function CostEstimator() {
                         className="h-8 text-xs"
                         placeholder="Room"
                         value={item.room}
-                        onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, room: e.target.value } : it))}
+                        onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, room: e.target.value, ai_suggested: false } : it))}
                         disabled={isLocked}
                       />
                     </div>
@@ -588,14 +647,14 @@ export default function CostEstimator() {
                         className="h-8 text-xs text-right"
                         placeholder="Qty"
                         value={item.quantity}
-                        onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, quantity: e.target.value } : it))}
+                        onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, quantity: e.target.value, ai_suggested: false } : it))}
                         disabled={isLocked}
                       />
                     </div>
                     <div className="col-span-3 sm:col-span-1">
                       <Select
                         value={item.unit_type}
-                        onValueChange={(v) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, unit_type: v } : it))}
+                        onValueChange={(v) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, unit_type: v, ai_suggested: false } : it))}
                         disabled={isLocked}
                       >
                         <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
@@ -613,7 +672,7 @@ export default function CostEstimator() {
                           className="h-8 text-xs pl-5"
                           placeholder={labourPlaceholder(item.unit_type)}
                           value={item.unit_cost}
-                          onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, unit_cost: e.target.value } : it))}
+                          onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, unit_cost: e.target.value, ai_suggested: false } : it))}
                           disabled={isLocked}
                         />
                         {(item.unit_type === "hour" || item.unit_type === "day") && (
@@ -647,7 +706,7 @@ export default function CostEstimator() {
                           className="h-8 text-xs pl-5"
                           placeholder={materialPlaceholder(item.unit_type)}
                           value={item.material_cost}
-                          onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, material_cost: e.target.value, material_from_assembly: false } : it))}
+                          onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, material_cost: e.target.value, material_from_assembly: false, ai_suggested: false } : it))}
                           disabled={isLocked}
                         />
                       </div>
@@ -657,17 +716,23 @@ export default function CostEstimator() {
                           <span className="text-[9px] text-muted-foreground/60">from assembly</span>
                         </div>
                       )}
+                      {item.ai_suggested && (
+                        <div className="flex items-center gap-1 mt-0.5 px-0.5">
+                          <Sparkles className="h-2.5 w-2.5 text-primary/50" />
+                          <span className="text-[9px] text-primary/50">AI-suggested</span>
+                        </div>
+                      )}
                       {rowAssemblies.length > 0 && !isLocked && (
                         <Select
                           value={item.assembly_id ?? ""}
                           onValueChange={(v) => {
                             if (v === "none") {
-                              setItems((prev) => prev.map((it, i) => i === idx ? { ...it, assembly_id: null, material_from_assembly: false } : it));
+                              setItems((prev) => prev.map((it, i) => i === idx ? { ...it, assembly_id: null, material_from_assembly: false, ai_suggested: false } : it));
                             } else {
                               const assembly = rowAssemblies.find((a) => String(a.id) === v);
                               if (assembly) {
                                 const cost = calcAssemblyMaterialCost(assembly.materials ?? []);
-                                setItems((prev) => prev.map((it, i) => i === idx ? { ...it, assembly_id: v, material_cost: cost.toFixed(2), material_from_assembly: true } : it));
+                                setItems((prev) => prev.map((it, i) => i === idx ? { ...it, assembly_id: v, material_cost: cost.toFixed(2), material_from_assembly: true, ai_suggested: false } : it));
                               }
                             }
                           }}
@@ -762,9 +827,15 @@ export default function CostEstimator() {
             })}
           </div>
           {!isLocked && (
-            <Button variant="outline" size="sm" className="mt-3 gap-2" onClick={() => setItems((p) => [...p, { ...EMPTY_LINE_ITEM }])}>
-              <Plus className="h-4 w-4" /> Add line item
-            </Button>
+            <div className="flex items-center gap-2 mt-3">
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => setItems((p) => [...p, { ...EMPTY_LINE_ITEM }])}>
+                <Plus className="h-4 w-4" /> Add line item
+              </Button>
+              <Button variant="outline" size="sm" className="gap-2" onClick={handleGenerateDraft} disabled={busy}>
+                {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                Generate Draft
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -914,7 +985,148 @@ export default function CostEstimator() {
           </div>
         </div>
       </div>
+
+      <GenerateDraftDialog
+        suggestions={draftSuggestions}
+        selections={draftSelections}
+        onSelections={setDraftSelections}
+        onAdd={handleAddDraftItems}
+        onCancel={() => { setDraftSuggestions(null); setDraftSelections({}); }}
+      />
     </div>
+  );
+}
+
+interface DraftSuggestion {
+  category_id: number;
+  category_name: string;
+  reason: string;
+  unit_type: string | null;
+  market_rate: { typical: string; low: string; high: string } | null;
+  assemblies: Array<{ id: number; name: string; material_cost_per_unit: number }>;
+  no_rate_data: boolean;
+}
+
+function GenerateDraftDialog({
+  suggestions,
+  selections,
+  onSelections,
+  onAdd,
+  onCancel,
+}: {
+  suggestions: DraftSuggestion[] | null;
+  selections: Record<number, { checked: boolean; assemblyId: string | null }>;
+  onSelections: (s: Record<number, { checked: boolean; assemblyId: string | null }>) => void;
+  onAdd: () => void;
+  onCancel: () => void;
+}) {
+  const open = suggestions !== null;
+  const checkedCount = Object.values(selections).filter((s) => s.checked).length;
+
+  const toggle = (catId: number) => {
+    onSelections({
+      ...selections,
+      [catId]: { checked: !selections[catId]?.checked, assemblyId: selections[catId]?.assemblyId ?? null },
+    });
+  };
+
+  const setAssembly = (catId: number, assemblyId: string | null) => {
+    onSelections({
+      ...selections,
+      [catId]: { checked: true, assemblyId },
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary" />
+            Suggested Categories
+          </DialogTitle>
+          <DialogDescription>
+            Review these AI-suggested categories based on your project description. Select what you want to add — nothing is pre-selected.
+          </DialogDescription>
+        </DialogHeader>
+
+        {suggestions !== null && suggestions.length === 0 ? (
+          <div className="py-8 text-center">
+            <p className="text-sm text-muted-foreground">
+              Not enough project detail to suggest categories — try adding a project description, or add line items manually.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {suggestions?.map((s) => {
+              const sel = selections[s.category_id];
+              const isChecked = sel?.checked ?? false;
+              return (
+                <div key={s.category_id} className={`rounded-lg border p-3 transition-colors ${isChecked ? "border-primary/40 bg-primary/5" : "border-border"}`}>
+                  <div className="flex items-start gap-3">
+                    <Checkbox checked={isChecked} onCheckedChange={() => toggle(s.category_id)} className="mt-1" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm">{s.category_name}</span>
+                        {s.unit_type && <span className="text-xs text-muted-foreground">/ {s.unit_type}</span>}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">{s.reason}</p>
+                      <div className="mt-2 space-y-1">
+                        {s.market_rate ? (
+                          <p className="text-xs text-muted-foreground">
+                            Typical: ${s.market_rate.typical}/{s.unit_type} (range ${s.market_rate.low}-${s.market_rate.high})
+                          </p>
+                        ) : s.no_rate_data ? (
+                          <p className="text-xs text-muted-foreground italic">No rate data available — you'll need to enter costs manually</p>
+                        ) : null}
+                        {s.assemblies.length > 0 && (
+                          <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground">Assemblies (optional):</p>
+                            {s.assemblies.map((a) => (
+                              <label key={a.id} className="flex items-center gap-2 text-xs ml-2 cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name={`assembly-${s.category_id}`}
+                                  checked={sel?.assemblyId === String(a.id)}
+                                  onChange={() => setAssembly(s.category_id, String(a.id))}
+                                  className="h-3 w-3"
+                                />
+                                <span>{a.name} (${a.material_cost_per_unit}/unit)</span>
+                              </label>
+                            ))}
+                            {isChecked && sel?.assemblyId && (
+                              <label className="flex items-center gap-2 text-xs ml-2 cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name={`assembly-${s.category_id}`}
+                                  checked={sel.assemblyId === ""}
+                                  onChange={() => setAssembly(s.category_id, "")}
+                                  className="h-3 w-3"
+                                />
+                                <span className="text-muted-foreground">No assembly (use manual material cost)</span>
+                              </label>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" size="sm" onClick={onCancel}>Cancel</Button>
+          {suggestions !== null && suggestions.length > 0 && (
+            <Button size="sm" onClick={onAdd} disabled={checkedCount === 0}>
+              Add selected{checkedCount > 0 ? ` (${checkedCount})` : ""}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
