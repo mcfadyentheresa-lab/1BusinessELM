@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const ANTHROPIC_API_KEY = Deno.env.get("OPENAI_API_KEY");
+const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
