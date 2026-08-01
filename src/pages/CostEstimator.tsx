@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle, Info } from "lucide-react";
+import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle, Info, Package } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 interface LineItem {
@@ -26,6 +26,8 @@ interface LineItem {
   unit_cost: string;
   material_cost: string;
   notes: string;
+  assembly_id: string | null;
+  material_from_assembly: boolean;
 }
 
 interface EstimateWarning {
@@ -53,6 +55,8 @@ const EMPTY_LINE_ITEM: LineItem = {
   unit_cost: "0",
   material_cost: "0",
   notes: "",
+  assembly_id: null,
+  material_from_assembly: false,
 };
 
 function calcItemTotal(item: LineItem): number {
@@ -108,6 +112,39 @@ function itemMathCaption(item: LineItem): { labour: string; material: string } |
   };
 }
 
+interface MarketRate {
+  category_id: number;
+  unit_type: string;
+  low_rate: string;
+  high_rate: string;
+  typical_rate: string;
+}
+
+interface AssemblyMaterial {
+  material_name: string;
+  qty_per_sqft: number;
+  unit_cost: number;
+  waste_pct: number;
+}
+
+interface EstimateAssembly {
+  id: number;
+  name: string;
+  category_id: number;
+  quality_tier: string | null;
+  materials: AssemblyMaterial[];
+}
+
+function findMarketRate(rates: MarketRate[], categoryId: string, unitType: string): MarketRate | null {
+  return rates.find((r) => String(r.category_id) === categoryId && r.unit_type === unitType) ?? null;
+}
+
+function calcAssemblyMaterialCost(materials: AssemblyMaterial[]): number {
+  return materials.reduce((sum, m) => {
+    return sum + m.qty_per_sqft * m.unit_cost * (1 + m.waste_pct / 100);
+  }, 0);
+}
+
 export default function CostEstimator() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
@@ -141,6 +178,40 @@ export default function CostEstimator() {
     queryFn: async () => {
       const { data } = await supabase.from("cost_categories").select("*").order("sort_order");
       return data ?? [];
+    },
+  });
+
+  const { data: marketRates = [] } = useQuery<MarketRate[]>({
+    queryKey: ["market-rates"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("market_rates")
+        .select("category_id, unit_type, low_rate, high_rate, typical_rate")
+        .eq("is_active", true);
+      if (error) throw error;
+      return (data ?? []) as MarketRate[];
+    },
+  });
+
+  const { data: assemblies = [] } = useQuery<EstimateAssembly[]>({
+    queryKey: ["estimate-assemblies"],
+    queryFn: async () => {
+      const [{ data: aRows, error: aErr }, { data: mRows, error: mErr }] = await Promise.all([
+        supabase.from("estimate_assemblies").select("id, name, category_id, quality_tier").eq("is_active", true).order("name"),
+        supabase.from("assembly_materials").select("assembly_id, material_name, qty_per_sqft, unit_cost, waste_pct"),
+      ]);
+      if (aErr) throw aErr;
+      if (mErr) throw mErr;
+      const byAssembly = new Map<number, AssemblyMaterial[]>();
+      for (const m of mRows ?? []) {
+        const arr = byAssembly.get(m.assembly_id) ?? [];
+        arr.push(m as AssemblyMaterial);
+        byAssembly.set(m.assembly_id, arr);
+      }
+      return (aRows ?? []).map((a) => ({
+        id: a.id, name: a.name, category_id: a.category_id ?? 0,
+        quality_tier: a.quality_tier, materials: byAssembly.get(a.id) ?? [],
+      })) as EstimateAssembly[];
     },
   });
 
@@ -189,6 +260,8 @@ export default function CostEstimator() {
           unit_cost: i.unit_cost,
           material_cost: i.material_cost,
           notes: i.notes ?? "",
+          assembly_id: null,
+          material_from_assembly: false,
         })));
       }
     }
@@ -369,13 +442,15 @@ export default function CostEstimator() {
               const itemWarnings = item.id ? (itemLevelByItem.get(item.id) ?? []) : [];
               const activeItemWarnings = itemWarnings.filter((w) => !w.ignored);
               const ignoredItemWarnings = itemWarnings.filter((w) => w.ignored);
+              const marketRate = item.category_id ? findMarketRate(marketRates, item.category_id, item.unit_type) : null;
+              const rowAssemblies = item.category_id ? assemblies.filter((a) => String(a.category_id) === item.category_id) : [];
               return (
                 <div key={idx}>
                   <div className="grid grid-cols-12 gap-2 items-start p-3 rounded-lg bg-muted/30 border border-border/60">
                     <div className="col-span-12 sm:col-span-3">
                       <Select
                         value={item.category_id}
-                        onValueChange={(v) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, category_id: v } : it))}
+                        onValueChange={(v) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, category_id: v, assembly_id: null, material_from_assembly: false } : it))}
                         disabled={isLocked}
                       >
                         <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Category…" /></SelectTrigger>
@@ -446,6 +521,11 @@ export default function CostEstimator() {
                           </Tooltip>
                         )}
                       </div>
+                      {marketRate && (
+                        <p className="text-[10px] text-muted-foreground/70 leading-tight mt-1 px-0.5">
+                          Typical: ${formatRate(marketRate.typical_rate)}/{UNIT_LABEL[item.unit_type] ?? "unit"} (range ${formatRate(marketRate.low_rate)}–${formatRate(marketRate.high_rate)})
+                        </p>
+                      )}
                     </div>
                     <div className="col-span-4 sm:col-span-2">
                       <div className="relative">
@@ -454,10 +534,40 @@ export default function CostEstimator() {
                           className="h-8 text-xs pl-5"
                           placeholder={materialPlaceholder(item.unit_type)}
                           value={item.material_cost}
-                          onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, material_cost: e.target.value } : it))}
+                          onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, material_cost: e.target.value, material_from_assembly: false } : it))}
                           disabled={isLocked}
                         />
                       </div>
+                      {item.material_from_assembly && (
+                        <div className="flex items-center gap-1 mt-0.5 px-0.5">
+                          <Package className="h-2.5 w-2.5 text-muted-foreground/60" />
+                          <span className="text-[9px] text-muted-foreground/60">from assembly</span>
+                        </div>
+                      )}
+                      {rowAssemblies.length > 0 && !isLocked && (
+                        <Select
+                          value={item.assembly_id ?? ""}
+                          onValueChange={(v) => {
+                            if (v === "none") {
+                              setItems((prev) => prev.map((it, i) => i === idx ? { ...it, assembly_id: null, material_from_assembly: false } : it));
+                            } else {
+                              const assembly = rowAssemblies.find((a) => String(a.id) === v);
+                              if (assembly) {
+                                const cost = calcAssemblyMaterialCost(assembly.materials ?? []);
+                                setItems((prev) => prev.map((it, i) => i === idx ? { ...it, assembly_id: v, material_cost: cost.toFixed(2), material_from_assembly: true } : it));
+                              }
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="h-6 text-[10px] mt-0.5"><SelectValue placeholder="Use assembly…" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            {rowAssemblies.map((a) => (
+                              <SelectItem key={a.id} value={String(a.id)}>{a.name}{a.quality_tier ? ` (${a.quality_tier})` : ""}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
                     <div className="col-span-3 sm:col-span-1 flex items-center justify-between">
                       <span className="text-xs font-medium tabular-nums" style={{ fontFamily: "var(--font-mono)" }}>
