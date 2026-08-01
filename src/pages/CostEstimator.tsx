@@ -961,6 +961,16 @@ export default function CostEstimator() {
             <div>
               <div className="flex items-center gap-2 mb-1.5">
                 <p className="text-xs text-muted-foreground">Markup</p>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" className="text-muted-foreground hover:text-foreground transition-colors">
+                      <Info className="h-3 w-3" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs text-xs">
+                    25% default markup is consistent with sustainable blended markup ranges (20%-35%) documented for small, high-touch Muskoka renovation builders. Source: Muskoka builder markup research, 2026.
+                  </TooltipContent>
+                </Tooltip>
                 <Switch checked={markupEnabled} onCheckedChange={setMarkupEnabled} disabled={isLocked} className="scale-75 origin-left" />
               </div>
               <div className="flex items-center gap-1">
