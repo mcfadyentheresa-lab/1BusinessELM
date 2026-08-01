@@ -327,7 +327,7 @@ export default function CostEstimator() {
     const hasRegion = project?.region != null;
     const everChecked = warnings.length > 0;
 
-    type Band = "High" | "Medium" | "Low" | "Needs review" | "Not applicable";
+    type Band = "High" | "Medium" | "Low" | "Needs review" | "Not applicable" | "Not yet reviewed";
     const bandValue = (b: Band): number | null => {
       if (b === "High") return 100;
       if (b === "Medium") return 60;
@@ -338,7 +338,8 @@ export default function CostEstimator() {
 
     const costBand: Band = costComplCount === 0 ? "High" : costComplCount <= 2 ? "Medium" : "Low";
     const scopeBand: Band = scopeCount === 0 ? "High" : scopeCount <= 2 ? "Medium" : "Low";
-    const clientBand: Band = clientClarityCount === 0 ? "High" : clientClarityCount <= 2 ? "Medium" : "Low";
+    const clientReviewEverRun = clientReviewWarnings.length > 0;
+    const clientBand: Band = !clientReviewEverRun ? "Not yet reviewed" : clientClarityCount === 0 ? "High" : clientClarityCount <= 2 ? "Medium" : "Low";
     const uncategorizedBand: Band = uncategorizedCount === 0 ? "High" : "Needs review";
     const regionalBand: Band = missingModCount > 0 ? "Needs review" : hasRegion ? "High" : "Not applicable";
 
@@ -351,7 +352,7 @@ export default function CostEstimator() {
       subScores: [
         { label: "Cost completeness", band: costBand, count: costComplCount, reason: costComplCount === 0 ? "no unresolved pricing warnings" : `${costComplCount} unresolved pricing warning${costComplCount !== 1 ? "s" : ""}` },
         { label: "Scope completeness", band: scopeBand, count: scopeCount, reason: scopeCount === 0 ? "all expected scope items present" : `${scopeCount} missing scope warning${scopeCount !== 1 ? "s" : ""}` },
-        { label: "Client clarity", band: clientBand, count: clientClarityCount, reason: clientClarityCount === 0 ? "no unclear items flagged" : `${clientClarityCount} unclear item${clientClarityCount !== 1 ? "s" : ""}` },
+        { label: "Client clarity", band: clientBand, count: clientClarityCount, reason: clientBand === "Not yet reviewed" ? "client review not yet run" : clientClarityCount === 0 ? "no unclear items flagged" : `${clientClarityCount} unclear item${clientClarityCount !== 1 ? "s" : ""}` },
         { label: "Uncategorized items", band: uncategorizedBand, count: uncategorizedCount, reason: uncategorizedCount === 0 ? "all items categorized" : `${uncategorizedCount} uncategorized item${uncategorizedCount !== 1 ? "s" : ""}` },
         { label: "Regional pricing", band: regionalBand, count: missingModCount, reason: missingModCount > 0 ? `${missingModCount} unresolved regional pricing warning${missingModCount !== 1 ? "s" : ""}` : hasRegion ? "regional modifiers applied" : "no region set for this project" },
       ],
@@ -917,7 +918,7 @@ export default function CostEstimator() {
   );
 }
 
-type ConfidenceBand = "High" | "Medium" | "Low" | "Needs review" | "Not applicable";
+type ConfidenceBand = "High" | "Medium" | "Low" | "Needs review" | "Not applicable" | "Not yet reviewed";
 
 interface ConfidenceSubScore {
   label: string;
@@ -938,6 +939,7 @@ const bandColor: Record<ConfidenceBand, string> = {
   "Low": "text-red-600",
   "Needs review": "text-orange-600",
   "Not applicable": "text-muted-foreground",
+  "Not yet reviewed": "text-muted-foreground",
 };
 
 const bandBg: Record<ConfidenceBand, string> = {
@@ -946,6 +948,7 @@ const bandBg: Record<ConfidenceBand, string> = {
   "Low": "bg-red-500/10 border-red-500/30",
   "Needs review": "bg-orange-500/10 border-orange-500/30",
   "Not applicable": "bg-muted/20 border-border/40",
+  "Not yet reviewed": "bg-muted/20 border-border/40",
 };
 
 function ConfidenceScoreCard({ score }: { score: ConfidenceScore }) {
