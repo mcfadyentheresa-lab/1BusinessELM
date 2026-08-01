@@ -10,6 +10,7 @@ const corsHeaders = {
 interface WatcherAlertInsert {
   project_id: number;
   category: "money" | "risk" | "decision" | "commitment";
+  priority: "critical" | "attention" | "watch";
   title: string;
   description: string | null;
   suggested_action: string | null;
@@ -41,6 +42,7 @@ Deno.serve(async (req: Request) => {
       check_a: 0,
       check_b: 0,
       check_c: 0,
+      check_d: 0,
       skipped_anthropic: false,
       errors: [] as string[],
       classifications: [] as Array<{
@@ -127,6 +129,7 @@ Deno.serve(async (req: Request) => {
           const inserted = await insertAlert({
             project_id: est.project_id,
             category: "money",
+            priority: "attention",
             title: `Unresolved estimate warning: ${catName}`,
             description: `${w.message}${w.percent_diff ? ` (variance ${w.percent_diff}%)` : ""}${item.room ? ` — room: ${item.room}` : ""}`,
             suggested_action: "Review the estimate line item and either adjust the price or acknowledge the warning.",
@@ -156,6 +159,7 @@ Deno.serve(async (req: Request) => {
           const inserted = await insertAlert({
             project_id: co.project_id,
             category: "money",
+            priority: "watch",
             title: `Stale change order #${co.number}: ${co.title}`,
             description: `Change order #${co.number} (${co.title}) has been in "${co.status}" status for over 5 days. Amount: ${co.amount}.`,
             suggested_action: `Follow up with client on change order #${co.number}.`,
@@ -225,6 +229,7 @@ Deno.serve(async (req: Request) => {
             const inserted = await insertAlert({
               project_id: msg.project_id,
               category: "money",
+              priority: "attention",
               title: "Possible unpriced work request in client message",
               description: classification.description ?? "Client message may contain a request for additional work or scope.",
               suggested_action: "Review this request and determine whether a change order is needed.",
@@ -236,6 +241,53 @@ Deno.serve(async (req: Request) => {
               if (entry) entry.alert_inserted = inserted;
             }
             if (inserted) summary.check_c++;
+          }
+        }
+      }
+    }
+
+    // -------------------------------------------------------
+    // Check D — Budget approaching or over limit
+    // -------------------------------------------------------
+    if (runAll || requested === "D") {
+      const { data: projects, error: pErr } = await db
+        .from("projects")
+        .select("id, name, total_budget, budget_used")
+        .gt("total_budget", 0);
+
+      if (pErr) {
+        summary.errors.push(`Check D query: ${pErr.message}`);
+      } else if (projects) {
+        for (const p of projects) {
+          const percentUsed = (p.budget_used ?? 0) / p.total_budget;
+          if (percentUsed >= 1.0) {
+            const overageDollars = (p.budget_used ?? 0) - p.total_budget;
+            const pctDisplay = Math.round(percentUsed * 100);
+            const inserted = await insertAlert({
+              project_id: p.id,
+              category: "money",
+              priority: "critical",
+              title: `${p.name}: budget exceeded (${pctDisplay}% used)`,
+              description: `${p.name} has used ${p.budget_used} of its ${p.total_budget} total budget (${pctDisplay}%) — overage of ${overageDollars}.`,
+              suggested_action: "Review project costs immediately. Consider a change order to increase the budget or reduce remaining scope.",
+              source_type: "budget_overage",
+              source_id: `budget:${p.id}:critical`,
+            });
+            if (inserted) summary.check_d++;
+          } else if (percentUsed >= 0.8) {
+            const pctDisplay = Math.round(percentUsed * 100);
+            const remaining = p.total_budget - (p.budget_used ?? 0);
+            const inserted = await insertAlert({
+              project_id: p.id,
+              category: "money",
+              priority: "attention",
+              title: `${p.name}: budget approaching limit (${pctDisplay}% used)`,
+              description: `${p.name} has used ${p.budget_used} of its ${p.total_budget} total budget (${pctDisplay}%) — ${remaining} remaining.`,
+              suggested_action: "Review remaining scope against remaining budget. Flag any upcoming costs that could push the project over budget.",
+              source_type: "budget_overage",
+              source_id: `budget:${p.id}:attention`,
+            });
+            if (inserted) summary.check_d++;
           }
         }
       }
