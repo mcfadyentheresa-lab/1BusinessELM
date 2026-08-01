@@ -1289,6 +1289,7 @@ export interface Database {
           ignored: boolean | null;
           ignored_by: string | null;
           ignored_at: string | null;
+          source: string;
         };
         Insert: {
           estimate_item_id?: number | null;
@@ -1299,6 +1300,7 @@ export interface Database {
           ignored?: boolean | null;
           ignored_by?: string | null;
           ignored_at?: string | null;
+          source?: string;
         };
         Update: {
           estimate_item_id?: number | null;
@@ -1309,6 +1311,7 @@ export interface Database {
           ignored?: boolean | null;
           ignored_by?: string | null;
           ignored_at?: string | null;
+          source?: string;
         };
         Relationships: never[];
       };

@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle, Info, Package } from "lucide-react";
+import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle, Info, Package, Eye } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 interface LineItem {
@@ -38,11 +38,18 @@ interface EstimateWarning {
   message: string;
   percent_diff: string | null;
   ignored: boolean;
+  source: string;
 }
 
 interface AuditResponse {
   warnings: EstimateWarning[];
   counts: Record<string, number>;
+  ai_parse_failed?: boolean;
+}
+
+interface ClientReviewResponse {
+  warnings: EstimateWarning[];
+  count: number;
   ai_parse_failed?: boolean;
 }
 
@@ -223,7 +230,7 @@ export default function CostEstimator() {
       if (!estimateId) return [];
       const { data, error } = await supabase
         .from("estimate_warnings")
-        .select("id, estimate_item_id, estimate_id, warning_type, message, percent_diff, ignored")
+        .select("id, estimate_item_id, estimate_id, warning_type, message, percent_diff, ignored, source")
         .eq("estimate_id", estimateId)
         .order("id");
       if (error) throw error;
@@ -240,6 +247,7 @@ export default function CostEstimator() {
   const [managementFeePct, setManagementFeePct] = useState("15");
   const [saving, setSaving] = useState(false);
   const [auditing, setAuditing] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const [showIgnored, setShowIgnored] = useState(false);
 
   useEffect(() => {
@@ -287,14 +295,26 @@ export default function CostEstimator() {
     return map;
   }, [warnings]);
 
+  const auditWarnings = useMemo(() => warnings.filter((w) => w.source === "audit"), [warnings]);
+  const clientReviewWarnings = useMemo(() => warnings.filter((w) => w.source === "client_review"), [warnings]);
+
   const estimateLevelWarnings = useMemo(
-    () => warnings.filter((w) => w.estimate_id != null && w.estimate_item_id == null),
-    [warnings],
+    () => auditWarnings.filter((w) => w.estimate_id != null && w.estimate_item_id == null),
+    [auditWarnings],
   );
   const activeEstimateLevel = estimateLevelWarnings.filter((w) => !w.ignored);
   const ignoredEstimateLevel = estimateLevelWarnings.filter((w) => w.ignored);
+
+  const clientReviewEstimateLevel = useMemo(
+    () => clientReviewWarnings.filter((w) => w.estimate_id != null && w.estimate_item_id == null),
+    [clientReviewWarnings],
+  );
+  const activeClientReviewEstimateLevel = clientReviewEstimateLevel.filter((w) => !w.ignored);
+  const ignoredClientReviewEstimateLevel = clientReviewEstimateLevel.filter((w) => w.ignored);
+
   const ignoredCount = warnings.filter((w) => w.ignored).length;
-  const activeWarningCount = warnings.filter((w) => !w.ignored).length;
+  const activeWarningCount = auditWarnings.filter((w) => !w.ignored).length;
+  const activeClientReviewCount = clientReviewWarnings.filter((w) => !w.ignored).length;
 
   const handleSave = async () => {
     setSaving(true);
@@ -368,12 +388,46 @@ export default function CostEstimator() {
         throw new Error(json && (json as any).error ? (json as any).error : `Audit failed (${res.status})`);
       }
       const fresh = await refetchWarnings();
-      const freshActive = (fresh.data ?? []).filter((w) => !w.ignored).length;
+      const freshActive = (fresh.data ?? []).filter((w) => !w.ignored && w.source === "audit").length;
       toast({ title: `Audit complete — ${freshActive} warning${freshActive !== 1 ? "s" : ""} found` });
     } catch (e: any) {
       toast({ title: "Audit failed", description: e.message, variant: "destructive" });
     }
     setAuditing(false);
+  };
+
+  const handleClientReview = async () => {
+    if (!estimateId) return;
+    setReviewing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({ title: "Not signed in", variant: "destructive" });
+        return;
+      }
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/estimate-client-reviewer`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ estimate_id: estimateId }),
+      });
+      const json: ClientReviewResponse = await res.json();
+      if (!res.ok) {
+        throw new Error(json && (json as any).error ? (json as any).error : `Client review failed (${res.status})`);
+      }
+      const fresh = await refetchWarnings();
+      const freshActive = (fresh.data ?? []).filter((w) => !w.ignored && w.source === "client_review").length;
+      toast({
+        title: freshActive > 0
+          ? `Client review complete — ${freshActive} item${freshActive !== 1 ? "s" : ""} flagged`
+          : "Client review complete — no unclear items found",
+      });
+    } catch (e: any) {
+      toast({ title: "Client review failed", description: e.message, variant: "destructive" });
+    }
+    setReviewing(false);
   };
 
   const ignoreMutation = useMutation({
@@ -394,7 +448,7 @@ export default function CostEstimator() {
   });
 
   const isLocked = estimate?.status !== "draft" && estimate != null;
-  const busy = saving || auditing;
+  const busy = saving || auditing || reviewing;
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -423,6 +477,20 @@ export default function CostEstimator() {
               </span>
             )}
           </Button>
+          <Button
+            onClick={handleClientReview}
+            disabled={!estimateId || busy || isLocked}
+            variant="outline"
+            className="gap-2 relative"
+          >
+            {reviewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+            Review for Client
+            {activeClientReviewCount > 0 && (
+              <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1 rounded-full bg-blue-500 text-white text-[10px] font-semibold flex items-center justify-center tabular-nums">
+                {activeClientReviewCount}
+              </span>
+            )}
+          </Button>
           <Button onClick={handleSave} disabled={busy || isLocked} className="gap-2">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save estimate
@@ -440,8 +508,10 @@ export default function CostEstimator() {
           <div className="space-y-3">
             {items.map((item, idx) => {
               const itemWarnings = item.id ? (itemLevelByItem.get(item.id) ?? []) : [];
-              const activeItemWarnings = itemWarnings.filter((w) => !w.ignored);
-              const ignoredItemWarnings = itemWarnings.filter((w) => w.ignored);
+              const activeItemWarnings = itemWarnings.filter((w) => !w.ignored && w.source === "audit");
+              const ignoredItemWarnings = itemWarnings.filter((w) => w.ignored && w.source === "audit");
+              const activeClientItemWarnings = itemWarnings.filter((w) => !w.ignored && w.source === "client_review");
+              const ignoredClientItemWarnings = itemWarnings.filter((w) => w.ignored && w.source === "client_review");
               const marketRate = item.category_id ? findMarketRate(marketRates, item.category_id, item.unit_type) : null;
               const rowAssemblies = item.category_id ? assemblies.filter((a) => String(a.category_id) === item.category_id) : [];
               return (
@@ -608,9 +678,33 @@ export default function CostEstimator() {
                       ))}
                     </div>
                   )}
+                  {activeClientItemWarnings.length > 0 && (
+                    <div className="ml-3 mr-3 mb-1 space-y-1.5">
+                      {activeClientItemWarnings.map((w) => (
+                        <WarningRow
+                          key={w.id}
+                          warning={w}
+                          onIgnore={() => ignoreMutation.mutate({ warningId: w.id, ignore: true })}
+                          disabling={ignoreMutation.isPending}
+                        />
+                      ))}
+                    </div>
+                  )}
                   {showIgnored && ignoredItemWarnings.length > 0 && (
                     <div className="ml-3 mr-3 mb-1 space-y-1.5">
                       {ignoredItemWarnings.map((w) => (
+                        <WarningRow
+                          key={w.id}
+                          warning={w}
+                          onUnignore={() => ignoreMutation.mutate({ warningId: w.id, ignore: false })}
+                          disabling={ignoreMutation.isPending}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {showIgnored && ignoredClientItemWarnings.length > 0 && (
+                    <div className="ml-3 mr-3 mb-1 space-y-1.5">
+                      {ignoredClientItemWarnings.map((w) => (
                         <WarningRow
                           key={w.id}
                           warning={w}
@@ -632,7 +726,7 @@ export default function CostEstimator() {
         </CardContent>
       </Card>
 
-      {/* Estimate-level warnings panel */}
+      {/* Estimate-level audit warnings panel */}
       {(activeEstimateLevel.length > 0 || (showIgnored && ignoredEstimateLevel.length > 0) || ignoredCount > 0) && (
         <Card className="mb-4 border-amber-500/30">
           <CardHeader className="pb-3">
@@ -666,6 +760,43 @@ export default function CostEstimator() {
               />
             ))}
             {showIgnored && ignoredEstimateLevel.map((w) => (
+              <WarningRow
+                key={w.id}
+                warning={w}
+                onUnignore={() => ignoreMutation.mutate({ warningId: w.id, ignore: false })}
+                disabling={ignoreMutation.isPending}
+              />
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Client clarity review warnings panel */}
+      {(activeClientReviewEstimateLevel.length > 0 || (showIgnored && ignoredClientReviewEstimateLevel.length > 0)) && (
+        <Card className="mb-4 border-blue-500/30">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Eye className="h-4 w-4 text-blue-500" />
+                <CardTitle className="text-base">Client clarity review</CardTitle>
+                {activeClientReviewEstimateLevel.length > 0 && (
+                  <Badge variant="secondary" className="bg-blue-500/15 text-blue-700 border-blue-500/30">
+                    {activeClientReviewEstimateLevel.length} active
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-1.5">
+            {activeClientReviewEstimateLevel.map((w) => (
+              <WarningRow
+                key={w.id}
+                warning={w}
+                onIgnore={() => ignoreMutation.mutate({ warningId: w.id, ignore: true })}
+                disabling={ignoreMutation.isPending}
+              />
+            ))}
+            {showIgnored && ignoredClientReviewEstimateLevel.map((w) => (
               <WarningRow
                 key={w.id}
                 warning={w}
@@ -752,20 +883,28 @@ function WarningRow({
   onUnignore?: () => void;
   disabling: boolean;
 }) {
+  const isClient = warning.source === "client_review";
+  const activeBorder = isClient ? "border-blue-500/30 bg-blue-500/5 text-blue-900" : "border-amber-500/30 bg-amber-500/5 text-amber-900";
+  const activeIcon = isClient ? "text-blue-500" : "text-amber-500";
+  const activeBtn = isClient ? "text-blue-700 hover:text-blue-900" : "text-amber-700 hover:text-amber-900";
   return (
     <div
       className={`flex items-start justify-between gap-3 rounded-md border px-3 py-2 text-xs ${
         warning.ignored
           ? "border-border/40 bg-muted/20 text-muted-foreground line-through"
-          : "border-amber-500/30 bg-amber-500/5 text-amber-900"
+          : activeBorder
       }`}
     >
       <div className="flex items-start gap-2 min-w-0">
-        <AlertTriangle className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${warning.ignored ? "text-muted-foreground" : "text-amber-500"}`} />
+        {isClient ? (
+          <Eye className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${warning.ignored ? "text-muted-foreground" : activeIcon}`} />
+        ) : (
+          <AlertTriangle className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${warning.ignored ? "text-muted-foreground" : activeIcon}`} />
+        )}
         <div className="min-w-0">
           <p className="leading-snug">{warning.message}</p>
           {warning.percent_diff && !warning.ignored && (
-            <span className="inline-block mt-0.5 text-[10px] font-semibold text-amber-700 tabular-nums">
+            <span className={`inline-block mt-0.5 text-[10px] font-semibold tabular-nums ${isClient ? "text-blue-700" : "text-amber-700"}`}>
               {warning.percent_diff}% variance
             </span>
           )}
@@ -775,7 +914,7 @@ function WarningRow({
         <button
           onClick={onIgnore}
           disabled={disabling}
-          className="shrink-0 text-[11px] font-medium text-amber-700 hover:text-amber-900 transition-colors disabled:opacity-50"
+          className={`shrink-0 text-[11px] font-medium transition-colors disabled:opacity-50 ${activeBtn}`}
         >
           Ignore
         </button>
