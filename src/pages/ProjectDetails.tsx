@@ -1333,133 +1333,6 @@ export default function ProjectDetails() {
             </Button>
           </div>
 
-          <Dialog open={coOpen} onOpenChange={setCoOpen}>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>New Change Order</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 mt-2">
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-foreground">Number</label>
-                  <Input
-                    type="number"
-                    value={coForm.number}
-                    onChange={(e) => setCoForm((f) => ({ ...f, number: e.target.value }))}
-                  />
-                  <p className="text-xs text-muted-foreground">Auto-suggested — edit if needed.</p>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-foreground">Title <span className="text-destructive">*</span></label>
-                  <Input
-                    placeholder="e.g. Deck Railing Replacement"
-                    value={coForm.title}
-                    onChange={(e) => setCoForm((f) => ({ ...f, title: e.target.value }))}
-                    autoFocus
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-foreground">Description</label>
-                  <Textarea
-                    placeholder="Scope of work, materials, timing…"
-                    value={coForm.description}
-                    onChange={(e) => setCoForm((f) => ({ ...f, description: e.target.value }))}
-                    rows={3}
-                    className="resize-none"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-foreground">Amount <span className="text-destructive">*</span></label>
-                  <Input
-                    placeholder="$2,500"
-                    value={coForm.amount}
-                    onChange={(e) => setCoForm((f) => ({ ...f, amount: e.target.value }))}
-                  />
-                </div>
-                <div className="flex gap-2 pt-1">
-                  <Button className="flex-1 gap-2" onClick={saveChangeOrder} disabled={coSaving || !coForm.title.trim() || !coForm.amount.trim()}>
-                    {coSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-                    Create change order
-                  </Button>
-                  <Button variant="outline" onClick={() => setCoOpen(false)}>Cancel</Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-
-          {/* Log Decision Dialog (from decision_candidate alerts) */}
-          <Dialog open={decOpen} onOpenChange={setDecOpen}>
-            <DialogContent className="max-w-lg">
-              <DialogHeader>
-                <DialogTitle>Log Decision</DialogTitle>
-                <DialogDescription>
-                  Review the AI-suggested decision, edit as needed, then save to log it as an official project decision.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="dec-title">Title</Label>
-                  <Input id="dec-title" value={decForm.title} onChange={(e) => setDecForm({ ...decForm, title: e.target.value })} placeholder="Decision title" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="dec-decision">Decision</Label>
-                  <Textarea id="dec-decision" value={decForm.decision} onChange={(e) => setDecForm({ ...decForm, decision: e.target.value })} placeholder="What was decided" rows={3} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="dec-context">Context (optional)</Label>
-                  <Textarea id="dec-context" value={decForm.context} onChange={(e) => setDecForm({ ...decForm, context: e.target.value })} placeholder="Background or source message" rows={2} />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="dec-date">Decided On</Label>
-                    <Input id="dec-date" type="date" value={decForm.decided_on} onChange={(e) => setDecForm({ ...decForm, decided_on: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="dec-category">Category (optional)</Label>
-                    <Input id="dec-category" value={decForm.category} onChange={(e) => setDecForm({ ...decForm, category: e.target.value })} placeholder="e.g. Materials, Layout" />
-                  </div>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setDecOpen(false)} disabled={decSaving}>Cancel</Button>
-                <Button onClick={saveDecision} disabled={decSaving || !decForm.title.trim() || !decForm.decision.trim() || !decForm.decided_on}>
-                  {decSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Decision"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          {/* Add Task Dialog (from action_item_candidate alerts) */}
-          <Dialog open={taskOpen} onOpenChange={setTaskOpen}>
-            <DialogContent className="max-w-lg">
-              <DialogHeader>
-                <DialogTitle>Add Task</DialogTitle>
-                <DialogDescription>
-                  Review the AI-suggested task, edit as needed, then save to add it to the project task list.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="task-title">Title</Label>
-                  <Input id="task-title" value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} placeholder="Task title" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="task-desc">Description (optional)</Label>
-                  <Textarea id="task-desc" value={taskForm.description} onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })} placeholder="Task details" rows={3} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="task-due">Due Date (optional)</Label>
-                  <Input id="task-due" type="date" value={taskForm.due_date} onChange={(e) => setTaskForm({ ...taskForm, due_date: e.target.value })} />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setTaskOpen(false)} disabled={taskSaving}>Cancel</Button>
-                <Button onClick={saveTask} disabled={taskSaving || !taskForm.title.trim()}>
-                  {taskSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add Task"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
           {(changeOrders ?? []).length === 0 ? (
             <div className="text-center py-16 border border-dashed border-border rounded-xl">
               <AlertTriangle className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
@@ -1696,6 +1569,132 @@ export default function ProjectDetails() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Project-level dialogs — kept outside Tabs so they render regardless of active tab */}
+      <Dialog open={coOpen} onOpenChange={setCoOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>New Change Order</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">Number</label>
+              <Input
+                type="number"
+                value={coForm.number}
+                onChange={(e) => setCoForm((f) => ({ ...f, number: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">Auto-suggested — edit if needed.</p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">Title <span className="text-destructive">*</span></label>
+              <Input
+                placeholder="e.g. Deck Railing Replacement"
+                value={coForm.title}
+                onChange={(e) => setCoForm((f) => ({ ...f, title: e.target.value }))}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">Description</label>
+              <Textarea
+                placeholder="Scope of work, materials, timing…"
+                value={coForm.description}
+                onChange={(e) => setCoForm((f) => ({ ...f, description: e.target.value }))}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">Amount <span className="text-destructive">*</span></label>
+              <Input
+                placeholder="$2,500"
+                value={coForm.amount}
+                onChange={(e) => setCoForm((f) => ({ ...f, amount: e.target.value }))}
+              />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button className="flex-1 gap-2" onClick={saveChangeOrder} disabled={coSaving || !coForm.title.trim() || !coForm.amount.trim()}>
+                {coSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                Create change order
+              </Button>
+              <Button variant="outline" onClick={() => setCoOpen(false)}>Cancel</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={decOpen} onOpenChange={setDecOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Log Decision</DialogTitle>
+            <DialogDescription>
+              Review the AI-suggested decision, edit as needed, then save to log it as an official project decision.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="dec-title">Title</Label>
+              <Input id="dec-title" value={decForm.title} onChange={(e) => setDecForm({ ...decForm, title: e.target.value })} placeholder="Decision title" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="dec-decision">Decision</Label>
+              <Textarea id="dec-decision" value={decForm.decision} onChange={(e) => setDecForm({ ...decForm, decision: e.target.value })} placeholder="What was decided" rows={3} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="dec-context">Context (optional)</Label>
+              <Textarea id="dec-context" value={decForm.context} onChange={(e) => setDecForm({ ...decForm, context: e.target.value })} placeholder="Background or source message" rows={2} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="dec-date">Decided On</Label>
+                <Input id="dec-date" type="date" value={decForm.decided_on} onChange={(e) => setDecForm({ ...decForm, decided_on: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="dec-category">Category (optional)</Label>
+                <Input id="dec-category" value={decForm.category} onChange={(e) => setDecForm({ ...decForm, category: e.target.value })} placeholder="e.g. Materials, Layout" />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDecOpen(false)} disabled={decSaving}>Cancel</Button>
+            <Button onClick={saveDecision} disabled={decSaving || !decForm.title.trim() || !decForm.decision.trim() || !decForm.decided_on}>
+              {decSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Decision"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={taskOpen} onOpenChange={setTaskOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Add Task</DialogTitle>
+            <DialogDescription>
+              Review the AI-suggested task, edit as needed, then save to add it to the project task list.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="task-title">Title</Label>
+              <Input id="task-title" value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} placeholder="Task title" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="task-desc">Description (optional)</Label>
+              <Textarea id="task-desc" value={taskForm.description} onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })} placeholder="Task details" rows={3} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="task-due">Due Date (optional)</Label>
+              <Input id="task-due" type="date" value={taskForm.due_date} onChange={(e) => setTaskForm({ ...taskForm, due_date: e.target.value })} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTaskOpen(false)} disabled={taskSaving}>Cancel</Button>
+            <Button onClick={saveTask} disabled={taskSaving || !taskForm.title.trim()}>
+              {taskSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add Task"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
