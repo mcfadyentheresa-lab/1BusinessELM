@@ -71,6 +71,16 @@ const EMPTY_LINE_ITEM: LineItem = {
   ai_suggested: false,
 };
 
+function hasContent(item: LineItem): boolean {
+  if (item.category_id) return true;
+  if (item.custom_category.trim()) return true;
+  if (parseFloat(item.unit_cost || "0") !== 0) return true;
+  if (parseFloat(item.material_cost || "0") !== 0) return true;
+  if (item.room.trim()) return true;
+  if (item.notes.trim()) return true;
+  return false;
+}
+
 function calcItemTotal(item: LineItem): number {
   const qty = parseFloat(item.quantity || "0");
   const labor = parseFloat(item.unit_cost || "0") * qty;
@@ -399,8 +409,9 @@ export default function CostEstimator() {
         }).eq("id", newEstimateId);
         await supabase.from("estimate_items").delete().eq("estimate_id", newEstimateId);
       }
-      if (items.length > 0) {
-        const toInsert = items.map((item) => ({
+      const realItems = items.filter(hasContent);
+      if (realItems.length > 0) {
+        const toInsert = realItems.map((item) => ({
           estimate_id: newEstimateId,
           category_id: item.category_id ? parseInt(item.category_id) : null,
           custom_category: item.custom_category || null,
@@ -1002,7 +1013,7 @@ export default function CostEstimator() {
               <p className="text-4xl font-semibold text-foreground tabular-nums leading-none" style={{ fontFamily: "var(--font-mono)" }}>
                 {formatCurrency(total)}
               </p>
-              <p className="text-xs text-muted-foreground mt-2">Base {formatCurrency(subtotal)} · {items.length} line item{items.length !== 1 ? "s" : ""}</p>
+              <p className="text-xs text-muted-foreground mt-2">Base {formatCurrency(subtotal)} · {items.filter(hasContent).length} line item{items.filter(hasContent).length !== 1 ? "s" : ""}</p>
             </div>
             <div className="flex flex-col gap-1.5 text-right shrink-0">
               {contingency > 0 && <p className="text-xs text-muted-foreground tabular-nums" style={{ fontFamily: "var(--font-mono)" }}>+ {formatCurrency(contingency)} contingency</p>}
