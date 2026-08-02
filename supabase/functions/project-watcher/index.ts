@@ -50,6 +50,7 @@ Deno.serve(async (req: Request) => {
         content: string;
         is_scope_request: boolean | null;
         description: string | null;
+        suggested_title: string | null;
         classified: boolean;
         co_exists: boolean | null;
         alert_inserted: boolean | null;
@@ -201,6 +202,7 @@ Deno.serve(async (req: Request) => {
                 content: msg.content,
                 is_scope_request: classification ? classification.is_scope_request : null,
                 description: classification ? classification.description : null,
+                suggested_title: classification ? classification.suggested_title : null,
                 classified: !!classification,
                 co_exists: null,
                 alert_inserted: null,
@@ -230,7 +232,7 @@ Deno.serve(async (req: Request) => {
               project_id: msg.project_id,
               category: "money",
               priority: "attention",
-              title: "Possible unpriced work request in client message",
+              title: classification.suggested_title ?? "Possible unpriced work request in client message",
               description: classification.description ?? "Client message may contain a request for additional work or scope.",
               suggested_action: "Review this request and determine whether a change order is needed.",
               source_type: "message",
@@ -316,7 +318,7 @@ Deno.serve(async (req: Request) => {
 async function classifyMessage(
   content: string,
   apiKey: string,
-): Promise<{ is_scope_request: boolean; description: string | null } | null> {
+): Promise<{ is_scope_request: boolean; description: string | null; suggested_title: string | null } | null> {
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -332,9 +334,11 @@ async function classifyMessage(
           "You are a construction project scope classifier. " +
           "You ONLY output strict JSON. " +
           "Determine whether the user's message contains a client request for additional work, material, or scope that is not obviously part of existing project content. " +
-          'Respond with exactly: {"is_scope_request": boolean, "description": string|null}. ' +
-          "If is_scope_request is true, description must be one sentence summarizing the request. " +
-          "If false, description must be null. Do not include any other text.",
+          'Respond with exactly: {"is_scope_request": boolean, "description": string|null, "suggested_title": string|null}. ' +
+          "If is_scope_request is true, description must be one sentence summarizing the request, and suggested_title must be a short change-order-appropriate title (under 60 characters, title case, no trailing period — e.g. \"Deck Railing Replacement\"). " +
+          "If is_scope_request is false, both description and suggested_title must be null. " +
+          "CRITICAL: Never suggest or include a dollar amount, price, cost estimate, or any monetary value in any field — there is not enough information in a single message to responsibly estimate cost. " +
+          "Do not include any other text.",
         messages: [{ role: "user", content }],
       }),
     });
@@ -348,6 +352,7 @@ async function classifyMessage(
     return {
       is_scope_request: !!parsed.is_scope_request,
       description: parsed.description ?? null,
+      suggested_title: parsed.suggested_title ?? null,
     };
   } catch {
     return null;

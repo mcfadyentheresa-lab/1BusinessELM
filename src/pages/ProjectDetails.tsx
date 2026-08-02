@@ -252,6 +252,7 @@ export default function ProjectDetails() {
   const [coOpen, setCoOpen] = useState(false);
   const [coForm, setCoForm] = useState({ title: "", description: "", amount: "", number: "" });
   const [coSaving, setCoSaving] = useState(false);
+  const [coTriggerAlertId, setCoTriggerAlertId] = useState<string | null>(null);
 
   const [showDismissedAlerts, setShowDismissedAlerts] = useState(false);
 
@@ -282,14 +283,15 @@ export default function ProjectDetails() {
     qc.invalidateQueries({ queryKey: ["wishlist", projectId] });
   };
 
-  const openCoDialog = () => {
+  const openCoDialog = (prefill?: { title?: string; description?: string | null; triggerAlertId?: string }) => {
     const maxNumber = (changeOrders ?? []).reduce((max, co) => Math.max(max, co.number), 0);
     setCoForm({
-      title: "",
-      description: "",
+      title: prefill?.title ?? "",
+      description: prefill?.description ?? "",
       amount: "",
       number: String(maxNumber > 0 ? maxNumber + 1 : 9001),
     });
+    setCoTriggerAlertId(prefill?.triggerAlertId ?? null);
     setCoOpen(true);
   };
 
@@ -316,6 +318,11 @@ export default function ProjectDetails() {
     } else {
       toast({ title: "Change order created" });
       qc.invalidateQueries({ queryKey: ["change-orders", projectId] });
+      if (coTriggerAlertId) {
+        await supabase.from("watcher_alerts").update({ status: "acknowledged" }).eq("id", coTriggerAlertId);
+        qc.invalidateQueries({ queryKey: ["watcher-alerts", projectId] });
+        setCoTriggerAlertId(null);
+      }
       setCoOpen(false);
     }
     setCoSaving(false);
@@ -1234,7 +1241,7 @@ export default function ProjectDetails() {
         <TabsContent value="change-orders" className="p-6 max-w-4xl mx-auto w-full mt-0">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base font-semibold text-foreground">Change Orders</h2>
-            <Button size="sm" className="gap-1.5 h-8" onClick={openCoDialog}>
+            <Button size="sm" className="gap-1.5 h-8" onClick={() => openCoDialog()}>
               <Plus className="h-3.5 w-3.5" /> New Change Order
             </Button>
           </div>
@@ -1386,12 +1393,22 @@ export default function ProjectDetails() {
                     </div>
                     <div className="text-right shrink-0 flex flex-col items-end gap-2">
                       <p className="text-xs text-muted-foreground">{formatDate(alert.created_at)}</p>
-                      <button
-                        onClick={() => dismissAlert(alert.id)}
-                        className="text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        Dismiss
-                      </button>
+                      <div className="flex flex-col items-end gap-1.5">
+                        {alert.source_type === "message" && alert.status === "new" && (
+                          <button
+                            onClick={() => openCoDialog({ title: alert.title, description: alert.description, triggerAlertId: alert.id })}
+                            className="text-[11px] font-medium text-primary hover:text-primary/80 transition-colors"
+                          >
+                            Draft Change Order
+                          </button>
+                        )}
+                        <button
+                          onClick={() => dismissAlert(alert.id)}
+                          className="text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
