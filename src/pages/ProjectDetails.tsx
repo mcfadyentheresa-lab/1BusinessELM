@@ -222,6 +222,11 @@ export default function ProjectDetails() {
   const [wishForm, setWishForm] = useState({ name: "", note: "", image_url: "", source_url: "", category: "other" });
   const [wishSaving, setWishSaving] = useState(false);
 
+  // Change order form state
+  const [coOpen, setCoOpen] = useState(false);
+  const [coForm, setCoForm] = useState({ title: "", description: "", amount: "", number: "" });
+  const [coSaving, setCoSaving] = useState(false);
+
   const saveWishlistItem = async () => {
     if (!wishForm.name.trim() || !user) return;
     setWishSaving(true);
@@ -247,6 +252,45 @@ export default function ProjectDetails() {
   const deleteWishlistItem = async (id: number) => {
     await supabase.from("project_wishlist_items").delete().eq("id", id);
     qc.invalidateQueries({ queryKey: ["wishlist", projectId] });
+  };
+
+  const openCoDialog = () => {
+    const maxNumber = (changeOrders ?? []).reduce((max, co) => Math.max(max, co.number), 0);
+    setCoForm({
+      title: "",
+      description: "",
+      amount: "",
+      number: String(maxNumber > 0 ? maxNumber + 1 : 9001),
+    });
+    setCoOpen(true);
+  };
+
+  const saveChangeOrder = async () => {
+    if (!coForm.title.trim() || !user) return;
+    const amountStr = coForm.amount.trim();
+    const numericCheck = amountStr.replace(/[$,\s]/g, "");
+    if (!numericCheck || isNaN(Number(numericCheck)) || Number(numericCheck) <= 0) {
+      toast({ title: "Invalid amount", description: "Enter a valid dollar amount (e.g. $2,500)", variant: "destructive" });
+      return;
+    }
+    setCoSaving(true);
+    const { error } = await supabase.from("change_orders").insert({
+      project_id: projectId,
+      number: parseInt(coForm.number) || 9001,
+      title: coForm.title.trim(),
+      description: coForm.description.trim() || null,
+      amount: amountStr,
+      status: "draft",
+      created_by: user.id,
+    });
+    if (error) {
+      toast({ title: "Couldn't create change order", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Change order created" });
+      qc.invalidateQueries({ queryKey: ["change-orders", projectId] });
+      setCoOpen(false);
+    }
+    setCoSaving(false);
   };
 
   const toggleTask = async (taskId: number, done: boolean) => {
@@ -1126,6 +1170,66 @@ export default function ProjectDetails() {
 
         {/* Change Orders Tab */}
         <TabsContent value="change-orders" className="p-6 max-w-4xl mx-auto w-full mt-0">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-foreground">Change Orders</h2>
+            <Button size="sm" className="gap-1.5 h-8" onClick={openCoDialog}>
+              <Plus className="h-3.5 w-3.5" /> New Change Order
+            </Button>
+          </div>
+
+          <Dialog open={coOpen} onOpenChange={setCoOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>New Change Order</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 mt-2">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">Number</label>
+                  <Input
+                    type="number"
+                    value={coForm.number}
+                    onChange={(e) => setCoForm((f) => ({ ...f, number: e.target.value }))}
+                  />
+                  <p className="text-xs text-muted-foreground">Auto-suggested — edit if needed.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">Title <span className="text-destructive">*</span></label>
+                  <Input
+                    placeholder="e.g. Deck Railing Replacement"
+                    value={coForm.title}
+                    onChange={(e) => setCoForm((f) => ({ ...f, title: e.target.value }))}
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">Description</label>
+                  <Textarea
+                    placeholder="Scope of work, materials, timing…"
+                    value={coForm.description}
+                    onChange={(e) => setCoForm((f) => ({ ...f, description: e.target.value }))}
+                    rows={3}
+                    className="resize-none"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">Amount <span className="text-destructive">*</span></label>
+                  <Input
+                    placeholder="$2,500"
+                    value={coForm.amount}
+                    onChange={(e) => setCoForm((f) => ({ ...f, amount: e.target.value }))}
+                  />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <Button className="flex-1 gap-2" onClick={saveChangeOrder} disabled={coSaving || !coForm.title.trim() || !coForm.amount.trim()}>
+                    {coSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Create change order
+                  </Button>
+                  <Button variant="outline" onClick={() => setCoOpen(false)}>Cancel</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
           {(changeOrders ?? []).length === 0 ? (
             <div className="text-center py-16 border border-dashed border-border rounded-xl">
               <AlertTriangle className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
@@ -1138,6 +1242,7 @@ export default function ProjectDetails() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-mono text-muted-foreground">#{co.number}</span>
                         <h3 className="font-semibold text-foreground">{co.title}</h3>
                         <Badge
                           variant={co.status === "approved" ? "success" : co.status === "rejected" ? "destructive" : "secondary"}
