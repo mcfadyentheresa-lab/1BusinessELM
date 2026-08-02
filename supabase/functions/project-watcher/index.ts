@@ -279,7 +279,10 @@ Deno.serve(async (req: Request) => {
             }
 
             // --- Action item candidate alert (new) ---
-            if (classification.potential_action_item) {
+            // Suppress when the same message is already a scope request — the scope-request
+            // alert covers the situation; an inferred follow-up task adds noise without an
+            // independent signal.
+            if (classification.potential_action_item && !classification.is_scope_request) {
               const aiInserted = await insertAlert({
                 project_id: msg.project_id,
                 category: "commitment",
