@@ -1976,6 +1976,44 @@ export interface Database {
         };
         Relationships: never[];
       };
+      watcher_alerts: {
+        Row: {
+          id: string;
+          project_id: number;
+          category: string;
+          title: string;
+          description: string | null;
+          suggested_action: string | null;
+          source_type: string;
+          source_id: string;
+          status: string;
+          priority: string;
+          created_at: string;
+        };
+        Insert: {
+          project_id: number;
+          category: string;
+          title: string;
+          description?: string | null;
+          suggested_action?: string | null;
+          source_type: string;
+          source_id: string;
+          status?: string;
+          priority?: string;
+        };
+        Update: {
+          project_id?: number;
+          category?: string;
+          title?: string;
+          description?: string | null;
+          suggested_action?: string | null;
+          source_type?: string;
+          source_id?: string;
+          status?: string;
+          priority?: string;
+        };
+        Relationships: never[];
+      };
     };
     Views: {};
     Functions: {};
@@ -2034,3 +2072,4 @@ export type WishlistItem = Database["public"]["Tables"]["project_wishlist_items"
 export type MaterialPriceHistory = Database["public"]["Tables"]["material_price_history"]["Row"];
 export type EstimateAssembly = Database["public"]["Tables"]["estimate_assemblies"]["Row"];
 export type AssemblyMaterial = Database["public"]["Tables"]["assembly_materials"]["Row"];
+export type WatcherAlert = Database["public"]["Tables"]["watcher_alerts"]["Row"];

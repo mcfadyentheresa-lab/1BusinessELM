@@ -22,7 +22,7 @@ import {
   ChevronRight, Settings, DollarSign, Calendar, AlertTriangle,
   MapPin, Plus, Check, Loader2, ArrowUpRight, FileImage, Package,
   Wrench, Camera, ClipboardList, ExternalLink, Send, User, Pencil, Columns,
-  Trash2, X, Heart, Link as LinkIcon,
+  Trash2, X, Heart, Link as LinkIcon, BellRing,
 } from "lucide-react";
 import PlanningBoard from "@/components/board/PlanningBoard";
 import type {
@@ -39,6 +39,20 @@ import type {
   Selection,
   SubMilestone,
 } from "@/lib/mappers";
+
+interface WatcherAlert {
+  id: string;
+  project_id: number;
+  category: string;
+  title: string;
+  description: string | null;
+  suggested_action: string | null;
+  source_type: string;
+  source_id: string;
+  status: string;
+  priority: string;
+  created_at: string;
+}
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   planning: { label: "Planning", color: "bg-amber-100 text-amber-800" },
@@ -178,6 +192,18 @@ export default function ProjectDetails() {
     enabled: activeTab === "change-orders",
   });
 
+  const { data: watcherAlerts } = useQuery<WatcherAlert[]>({
+    queryKey: ["watcher-alerts", projectId],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("watcher_alerts")
+        .select("*")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false });
+      return (data ?? []) as WatcherAlert[];
+    },
+  });
+
   const { data: siteVisits } = useQuery<SiteVisitWithUser[]>({
     queryKey: ["site-visits", projectId],
     queryFn: async () => {
@@ -226,6 +252,8 @@ export default function ProjectDetails() {
   const [coOpen, setCoOpen] = useState(false);
   const [coForm, setCoForm] = useState({ title: "", description: "", amount: "", number: "" });
   const [coSaving, setCoSaving] = useState(false);
+
+  const [showDismissedAlerts, setShowDismissedAlerts] = useState(false);
 
   const saveWishlistItem = async () => {
     if (!wishForm.name.trim() || !user) return;
@@ -293,6 +321,24 @@ export default function ProjectDetails() {
     setCoSaving(false);
   };
 
+  const dismissAlert = async (alertId: string) => {
+    const { error } = await supabase.from("watcher_alerts").update({ status: "dismissed" }).eq("id", alertId);
+    if (error) {
+      toast({ title: "Couldn't dismiss alert", description: error.message, variant: "destructive" });
+    } else {
+      qc.invalidateQueries({ queryKey: ["watcher-alerts", projectId] });
+    }
+  };
+
+  const restoreAlert = async (alertId: string) => {
+    const { error } = await supabase.from("watcher_alerts").update({ status: "new" }).eq("id", alertId);
+    if (error) {
+      toast({ title: "Couldn't restore alert", description: error.message, variant: "destructive" });
+    } else {
+      qc.invalidateQueries({ queryKey: ["watcher-alerts", projectId] });
+    }
+  };
+
   const toggleTask = async (taskId: number, done: boolean) => {
     await supabase.from("tasks").update({ status: done ? "done" : "todo" }).eq("id", taskId);
     qc.invalidateQueries({ queryKey: ["tasks", projectId] });
@@ -315,6 +361,16 @@ export default function ProjectDetails() {
     }
     setSendingMsg(false);
   };
+
+  const PRIORITY_ORDER: Record<string, number> = { critical: 0, attention: 1, watch: 2 };
+  const activeAlerts = (watcherAlerts ?? [])
+    .filter((a) => a.status === "new")
+    .sort((a, b) => {
+      const pd = (PRIORITY_ORDER[a.priority] ?? 3) - (PRIORITY_ORDER[b.priority] ?? 3);
+      return pd !== 0 ? pd : new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  const dismissedAlerts = (watcherAlerts ?? []).filter((a) => a.status === "dismissed");
+  const activeAlertCount = activeAlerts.length;
 
   if (projectLoading) {
     return (
@@ -353,6 +409,7 @@ export default function ProjectDetails() {
     { id: "decisions", label: "Decisions", icon: CheckSquare },
     { id: "files", label: "Files", icon: Image },
     { id: "change-orders", label: "Changes", icon: AlertTriangle },
+    { id: "alerts", label: "Alerts", icon: BellRing },
     { id: "site-visits", label: "Site Visits", icon: Camera },
     { id: "chat", label: "Chat", icon: MessageSquare },
   ];
@@ -467,6 +524,11 @@ export default function ProjectDetails() {
               >
                 <Icon className="h-3.5 w-3.5" />
                 {label}
+                {id === "alerts" && activeAlertCount > 0 && (
+                  <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-amber-500/20 text-amber-700 text-[10px] font-semibold leading-none">
+                    {activeAlertCount}
+                  </span>
+                )}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -1270,6 +1332,98 @@ export default function ProjectDetails() {
         </TabsContent>
 
         {/* Site Visits Tab */}
+        {/* Alerts Tab */}
+        <TabsContent value="alerts" className="p-6 max-w-4xl mx-auto w-full mt-0">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold text-foreground">Watcher Alerts</h2>
+              {activeAlertCount > 0 && (
+                <Badge variant="secondary" className="bg-amber-500/15 text-amber-700 border-amber-500/30">
+                  {activeAlertCount} active
+                </Badge>
+              )}
+            </div>
+            {dismissedAlerts.length > 0 && (
+              <button
+                onClick={() => setShowDismissedAlerts((s) => !s)}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {showDismissedAlerts ? "Hide dismissed" : `Show dismissed (${dismissedAlerts.length})`}
+              </button>
+            )}
+          </div>
+
+          {activeAlertCount === 0 && !showDismissedAlerts ? (
+            <div className="text-center py-16 border border-dashed border-border rounded-xl">
+              <BellRing className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-muted-foreground">No active alerts</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {activeAlerts.map((alert) => (
+                <div key={alert.id} className={`rounded-xl border p-4 ${
+                  alert.priority === "critical" ? "border-red-500/30 bg-red-500/5" :
+                  alert.priority === "attention" ? "border-amber-500/30 bg-amber-500/5" :
+                  "border-blue-500/30 bg-blue-500/5"
+                }`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge className={`text-[10px] ${
+                          alert.priority === "critical" ? "bg-red-500/15 text-red-700 border-red-500/30" :
+                          alert.priority === "attention" ? "bg-amber-500/15 text-amber-700 border-amber-500/30" :
+                          "bg-blue-500/15 text-blue-700 border-blue-500/30"
+                        }`}>
+                          {alert.priority}
+                        </Badge>
+                        <Badge variant="secondary" className="text-[10px]">{alert.category}</Badge>
+                      </div>
+                      <h3 className="font-semibold text-foreground text-sm">{alert.title}</h3>
+                      {alert.description && <p className="text-sm text-muted-foreground mt-1">{alert.description}</p>}
+                      {alert.suggested_action && (
+                        <p className="text-xs text-muted-foreground mt-1.5">→ {alert.suggested_action}</p>
+                      )}
+                    </div>
+                    <div className="text-right shrink-0 flex flex-col items-end gap-2">
+                      <p className="text-xs text-muted-foreground">{formatDate(alert.created_at)}</p>
+                      <button
+                        onClick={() => dismissAlert(alert.id)}
+                        className="text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {showDismissedAlerts && dismissedAlerts.map((alert) => (
+                <div key={alert.id} className="rounded-xl border border-border/40 bg-muted/20 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge variant="secondary" className="text-[10px] opacity-50">{alert.priority}</Badge>
+                        <Badge variant="secondary" className="text-[10px] opacity-50">{alert.category}</Badge>
+                      </div>
+                      <h3 className="font-semibold text-muted-foreground text-sm line-through">{alert.title}</h3>
+                      {alert.description && <p className="text-sm text-muted-foreground/70 mt-1">{alert.description}</p>}
+                    </div>
+                    <div className="text-right shrink-0 flex flex-col items-end gap-2">
+                      <p className="text-xs text-muted-foreground">{formatDate(alert.created_at)}</p>
+                      <button
+                        onClick={() => restoreAlert(alert.id)}
+                        className="text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
         <TabsContent value="site-visits" className="p-6 max-w-4xl mx-auto w-full mt-0">
           {(siteVisits ?? []).length === 0 ? (
             <div className="text-center py-16 border border-dashed border-border rounded-xl">
