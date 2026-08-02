@@ -1240,6 +1240,9 @@ export interface Database {
           notes: string | null;
           crew_rate_id: number | null;
           subcontractor_id: number | null;
+          assembly_id: number | null;
+          material_from_assembly: boolean | null;
+          ai_suggested: boolean | null;
           created_at: string | null;
         };
         Insert: {
@@ -1258,6 +1261,9 @@ export interface Database {
           notes?: string | null;
           crew_rate_id?: number | null;
           subcontractor_id?: number | null;
+          assembly_id?: number | null;
+          material_from_assembly?: boolean | null;
+          ai_suggested?: boolean | null;
         };
         Update: {
           estimate_id?: number;
@@ -1275,6 +1281,9 @@ export interface Database {
           notes?: string | null;
           crew_rate_id?: number | null;
           subcontractor_id?: number | null;
+          assembly_id?: number | null;
+          material_from_assembly?: boolean | null;
+          ai_suggested?: boolean | null;
         };
         Relationships: never[];
       };

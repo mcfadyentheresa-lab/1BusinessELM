@@ -275,9 +275,9 @@ export default function CostEstimator() {
           unit_cost: i.unit_cost,
           material_cost: i.material_cost,
           notes: i.notes ?? "",
-          assembly_id: null,
-          material_from_assembly: false,
-          ai_suggested: false,
+          assembly_id: i.assembly_id != null ? String(i.assembly_id) : null,
+          material_from_assembly: i.material_from_assembly ?? false,
+          ai_suggested: i.ai_suggested ?? false,
         })));
       }
     }
@@ -406,6 +406,9 @@ export default function CostEstimator() {
           material_cost: item.material_cost,
           labor_cost: String(parseFloat(item.unit_cost) * parseFloat(item.quantity)),
           notes: item.notes || null,
+          assembly_id: item.assembly_id ? parseInt(item.assembly_id) : null,
+          material_from_assembly: item.material_from_assembly,
+          ai_suggested: item.ai_suggested,
         }));
         await supabase.from("estimate_items").insert(toInsert);
       }
