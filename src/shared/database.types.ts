@@ -1187,6 +1187,8 @@ export interface Database {
           management_fee_percent: string;
           created_by: string | null;
           created_at: string | null;
+          last_audited_at: string | null;
+          last_client_reviewed_at: string | null;
         };
         Insert: {
           project_id: number;
@@ -1203,6 +1205,8 @@ export interface Database {
           management_fee_enabled?: boolean | null;
           management_fee_percent: string;
           created_by?: string | null;
+          last_audited_at?: string | null;
+          last_client_reviewed_at?: string | null;
         };
         Update: {
           project_id?: number;
@@ -1219,6 +1223,8 @@ export interface Database {
           management_fee_enabled?: boolean | null;
           management_fee_percent?: string;
           created_by?: string | null;
+          last_audited_at?: string | null;
+          last_client_reviewed_at?: string | null;
         };
         Relationships: never[];
       };

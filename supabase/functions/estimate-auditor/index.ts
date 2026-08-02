@@ -319,6 +319,11 @@ Deno.serve(async (req: Request) => {
       if (counts[w.warning_type] !== undefined) counts[w.warning_type]++;
     }
 
+    await db
+      .from("project_estimates")
+      .update({ last_audited_at: new Date().toISOString() })
+      .eq("id", estimateId);
+
     return new Response(JSON.stringify({
       warnings: insertedRows,
       counts,

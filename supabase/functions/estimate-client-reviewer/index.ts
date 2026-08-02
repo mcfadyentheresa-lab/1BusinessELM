@@ -177,6 +177,11 @@ Deno.serve(async (req: Request) => {
       insertedRows = inserted ?? [];
     }
 
+    await db
+      .from("project_estimates")
+      .update({ last_client_reviewed_at: new Date().toISOString() })
+      .eq("id", estimateId);
+
     return new Response(JSON.stringify({
       warnings: insertedRows,
       count: insertedRows.length,

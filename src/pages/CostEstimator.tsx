@@ -320,7 +320,7 @@ export default function CostEstimator() {
   const activeClientReviewEstimateLevel = clientReviewEstimateLevel.filter((w) => !w.ignored);
   const ignoredClientReviewEstimateLevel = clientReviewEstimateLevel.filter((w) => w.ignored);
 
-  const ignoredCount = warnings.filter((w) => w.ignored).length;
+  const ignoredCount = ignoredEstimateLevel.length;
   const activeWarningCount = auditWarnings.filter((w) => !w.ignored).length;
   const activeClientReviewCount = clientReviewWarnings.filter((w) => !w.ignored).length;
 
@@ -333,7 +333,7 @@ export default function CostEstimator() {
     const clientClarityCount = clientReviewWarnings.filter((w) => !w.ignored && w.warning_type === "unclear_scope").length;
 
     const hasRegion = project?.region != null;
-    const everChecked = warnings.length > 0;
+    const everChecked = estimate?.last_audited_at != null && estimate?.last_client_reviewed_at != null;
 
     type Band = "High" | "Medium" | "Low" | "Needs review" | "Not applicable" | "Not yet reviewed";
     const bandValue = (b: Band): number | null => {
@@ -346,7 +346,7 @@ export default function CostEstimator() {
 
     const costBand: Band = costComplCount === 0 ? "High" : costComplCount <= 2 ? "Medium" : "Low";
     const scopeBand: Band = scopeCount === 0 ? "High" : scopeCount <= 2 ? "Medium" : "Low";
-    const clientReviewEverRun = clientReviewWarnings.length > 0;
+    const clientReviewEverRun = estimate?.last_client_reviewed_at != null;
     const clientBand: Band = !clientReviewEverRun ? "Not yet reviewed" : clientClarityCount === 0 ? "High" : clientClarityCount <= 2 ? "Medium" : "Low";
     const uncategorizedBand: Band = uncategorizedCount === 0 ? "High" : "Needs review";
     const regionalBand: Band = missingModCount > 0 ? "Needs review" : hasRegion ? "High" : "Not applicable";
@@ -365,7 +365,7 @@ export default function CostEstimator() {
         { label: "Regional pricing", band: regionalBand, count: missingModCount, reason: missingModCount > 0 ? `${missingModCount} unresolved regional pricing warning${missingModCount !== 1 ? "s" : ""}` : hasRegion ? "regional modifiers applied" : "no region set for this project" },
       ],
     };
-  }, [auditWarnings, clientReviewWarnings, warnings, project?.region]);
+  }, [auditWarnings, clientReviewWarnings, warnings, project?.region, estimate?.last_audited_at, estimate?.last_client_reviewed_at]);
 
   const handleSave = async () => {
     setSaving(true);
