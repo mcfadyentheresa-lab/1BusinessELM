@@ -13,7 +13,15 @@ export function formatCurrency(value: number | string, currency = "CAD"): string
 
 export function formatDate(date: string | Date | null | undefined): string {
   if (!date) return "";
-  const d = typeof date === "string" ? new Date(date + "T00:00:00") : date;
+  let d: Date;
+  if (date instanceof Date) {
+    d = date;
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    d = new Date(date + "T00:00:00");
+  } else {
+    d = new Date(date);
+  }
+  if (isNaN(d.getTime())) return "";
   return d.toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" });
 }
 
