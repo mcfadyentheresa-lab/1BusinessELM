@@ -42,6 +42,8 @@ Deno.serve(async (req: Request) => {
       check_a: 0,
       check_b: 0,
       check_c: 0,
+      check_c_decisions: 0,
+      check_c_action_items: 0,
       check_d: 0,
       skipped_anthropic: false,
       errors: [] as string[],
@@ -51,9 +53,13 @@ Deno.serve(async (req: Request) => {
         is_scope_request: boolean | null;
         description: string | null;
         suggested_title: string | null;
+        potential_decision: { title: string; decision: string } | null;
+        potential_action_item: { title: string; description: string } | null;
         classified: boolean;
         co_exists: boolean | null;
         alert_inserted: boolean | null;
+        decision_alert_inserted: boolean | null;
+        action_item_alert_inserted: boolean | null;
       }>,
     };
 
@@ -196,6 +202,7 @@ Deno.serve(async (req: Request) => {
         } else {
           for (const msg of messages) {
             const classification = await classifyMessage(msg.content, anthropicKey);
+
             if (debug) {
               summary.classifications.push({
                 message_id: msg.id,
@@ -203,46 +210,92 @@ Deno.serve(async (req: Request) => {
                 is_scope_request: classification ? classification.is_scope_request : null,
                 description: classification ? classification.description : null,
                 suggested_title: classification ? classification.suggested_title : null,
+                potential_decision: classification ? classification.potential_decision : null,
+                potential_action_item: classification ? classification.potential_action_item : null,
                 classified: !!classification,
                 co_exists: null,
                 alert_inserted: null,
+                decision_alert_inserted: null,
+                action_item_alert_inserted: null,
               });
             }
-            if (!classification || !classification.is_scope_request) continue;
 
-            // Check for an existing change_order within 5 days after the message
-            const fiveDaysAfter = new Date(
-              new Date(msg.created_at).getTime() + 5 * 24 * 60 * 60 * 1000,
-            ).toISOString();
-            const { count } = await db
-              .from("change_orders")
-              .select("id", { count: "exact", head: true })
-              .eq("project_id", msg.project_id)
-              .gte("created_at", msg.created_at)
-              .lte("created_at", fiveDaysAfter);
+            if (!classification) continue;
 
-            const coExists = (count ?? 0) > 0;
-            if (debug && summary.classifications.length > 0) {
-              const entry = summary.classifications.find((c) => c.message_id === msg.id);
-              if (entry) entry.co_exists = coExists;
+            // --- Scope request alert (existing Check C behavior, unchanged) ---
+            if (classification.is_scope_request) {
+              const fiveDaysAfter = new Date(
+                new Date(msg.created_at).getTime() + 5 * 24 * 60 * 60 * 1000,
+              ).toISOString();
+              const { count } = await db
+                .from("change_orders")
+                .select("id", { count: "exact", head: true })
+                .eq("project_id", msg.project_id)
+                .gte("created_at", msg.created_at)
+                .lte("created_at", fiveDaysAfter);
+
+              const coExists = (count ?? 0) > 0;
+              if (debug && summary.classifications.length > 0) {
+                const entry = summary.classifications.find((c) => c.message_id === msg.id);
+                if (entry) entry.co_exists = coExists;
+              }
+
+              if (!coExists) {
+                const inserted = await insertAlert({
+                  project_id: msg.project_id,
+                  category: "money",
+                  priority: "attention",
+                  title: classification.suggested_title ?? "Possible unpriced work request in client message",
+                  description: classification.description ?? "Client message may contain a request for additional work or scope.",
+                  suggested_action: "Review this request and determine whether a change order is needed.",
+                  source_type: "message",
+                  source_id: String(msg.id),
+                });
+                if (debug && summary.classifications.length > 0) {
+                  const entry = summary.classifications.find((c) => c.message_id === msg.id);
+                  if (entry) entry.alert_inserted = inserted;
+                }
+                if (inserted) summary.check_c++;
+              }
             }
-            if (coExists) continue; // a CO was already created
 
-            const inserted = await insertAlert({
-              project_id: msg.project_id,
-              category: "money",
-              priority: "attention",
-              title: classification.suggested_title ?? "Possible unpriced work request in client message",
-              description: classification.description ?? "Client message may contain a request for additional work or scope.",
-              suggested_action: "Review this request and determine whether a change order is needed.",
-              source_type: "message",
-              source_id: String(msg.id),
-            });
-            if (debug && summary.classifications.length > 0) {
-              const entry = summary.classifications.find((c) => c.message_id === msg.id);
-              if (entry) entry.alert_inserted = inserted;
+            // --- Decision candidate alert (new) ---
+            if (classification.potential_decision) {
+              const decInserted = await insertAlert({
+                project_id: msg.project_id,
+                category: "decision",
+                priority: "attention",
+                title: classification.potential_decision.title,
+                description: classification.potential_decision.decision,
+                suggested_action: "Review and log this as an official project decision.",
+                source_type: "decision_candidate",
+                source_id: String(msg.id),
+              });
+              if (debug && summary.classifications.length > 0) {
+                const entry = summary.classifications.find((c) => c.message_id === msg.id);
+                if (entry) entry.decision_alert_inserted = decInserted;
+              }
+              if (decInserted) summary.check_c_decisions++;
             }
-            if (inserted) summary.check_c++;
+
+            // --- Action item candidate alert (new) ---
+            if (classification.potential_action_item) {
+              const aiInserted = await insertAlert({
+                project_id: msg.project_id,
+                category: "commitment",
+                priority: "attention",
+                title: classification.potential_action_item.title,
+                description: classification.potential_action_item.description,
+                suggested_action: "Review and add this as a task to follow up on.",
+                source_type: "action_item_candidate",
+                source_id: String(msg.id),
+              });
+              if (debug && summary.classifications.length > 0) {
+                const entry = summary.classifications.find((c) => c.message_id === msg.id);
+                if (entry) entry.action_item_alert_inserted = aiInserted;
+              }
+              if (aiInserted) summary.check_c_action_items++;
+            }
           }
         }
       }
@@ -315,10 +368,18 @@ Deno.serve(async (req: Request) => {
 // -------------------------------------------------------
 // Anthropic classifier — strict JSON, narrow prompt
 // -------------------------------------------------------
+interface MessageClassification {
+  is_scope_request: boolean;
+  description: string | null;
+  suggested_title: string | null;
+  potential_decision: { title: string; decision: string } | null;
+  potential_action_item: { title: string; description: string } | null;
+}
+
 async function classifyMessage(
   content: string,
   apiKey: string,
-): Promise<{ is_scope_request: boolean; description: string | null; suggested_title: string | null } | null> {
+): Promise<MessageClassification | null> {
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -329,14 +390,20 @@ async function classifyMessage(
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5",
-        max_tokens: 256,
+        max_tokens: 512,
         system:
-          "You are a construction project scope classifier. " +
+          "You are a construction project message analyzer. " +
           "You ONLY output strict JSON. " +
-          "Determine whether the user's message contains a client request for additional work, material, or scope that is not obviously part of existing project content. " +
-          'Respond with exactly: {"is_scope_request": boolean, "description": string|null, "suggested_title": string|null}. ' +
+          'Respond with exactly: {"is_scope_request": boolean, "description": string|null, "suggested_title": string|null, "potential_decision": {"title": string, "decision": string}|null, "potential_action_item": {"title": string, "description": string}|null}. ' +
+          "\n\n" +
+          "SCOPE REQUEST: Determine whether the message contains a client request for additional work, material, or scope that is not obviously part of existing project content. " +
           "If is_scope_request is true, description must be one sentence summarizing the request, and suggested_title must be a short change-order-appropriate title (under 60 characters, title case, no trailing period — e.g. \"Deck Railing Replacement\"). " +
           "If is_scope_request is false, both description and suggested_title must be null. " +
+          "\n\n" +
+          "DECISION: If the message indicates a decision has been reached or finalized (e.g. a material, color, layout, or design choice was confirmed), set potential_decision with a title (under 60 characters, title case, no trailing period) and a decision field (one sentence stating what was decided). If no decision was reached, set potential_decision to null. " +
+          "\n\n" +
+          "ACTION ITEM: If the message implies a follow-up task or action someone should take (e.g. ordering a sample, scheduling an inspection, calling a supplier), set potential_action_item with a title (under 60 characters, title case, no trailing period) and a description (one sentence describing the task). If no action item is implied, set potential_action_item to null. " +
+          "\n\n" +
           "CRITICAL: Never suggest or include a dollar amount, price, cost estimate, or any monetary value in any field — there is not enough information in a single message to responsibly estimate cost. " +
           "Do not include any other text.",
         messages: [{ role: "user", content }],
@@ -353,6 +420,8 @@ async function classifyMessage(
       is_scope_request: !!parsed.is_scope_request,
       description: parsed.description ?? null,
       suggested_title: parsed.suggested_title ?? null,
+      potential_decision: parsed.potential_decision ?? null,
+      potential_action_item: parsed.potential_action_item ?? null,
     };
   } catch {
     return null;

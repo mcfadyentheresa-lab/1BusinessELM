@@ -13,8 +13,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import {
@@ -254,6 +255,18 @@ export default function ProjectDetails() {
   const [coSaving, setCoSaving] = useState(false);
   const [coTriggerAlertId, setCoTriggerAlertId] = useState<string | null>(null);
 
+  // Decision dialog state (from decision_candidate alerts)
+  const [decOpen, setDecOpen] = useState(false);
+  const [decForm, setDecForm] = useState({ title: "", decision: "", context: "", decided_on: "", category: "" });
+  const [decSaving, setDecSaving] = useState(false);
+  const [decTriggerAlertId, setDecTriggerAlertId] = useState<string | null>(null);
+
+  // Task dialog state (from action_item_candidate alerts)
+  const [taskOpen, setTaskOpen] = useState(false);
+  const [taskForm, setTaskForm] = useState({ title: "", description: "", due_date: "" });
+  const [taskSaving, setTaskSaving] = useState(false);
+  const [taskTriggerAlertId, setTaskTriggerAlertId] = useState<string | null>(null);
+
   const [showDismissedAlerts, setShowDismissedAlerts] = useState(false);
 
   const saveWishlistItem = async () => {
@@ -344,6 +357,80 @@ export default function ProjectDetails() {
     } else {
       qc.invalidateQueries({ queryKey: ["watcher-alerts", projectId] });
     }
+  };
+
+  const openDecisionDialog = (prefill: { title: string; decision: string | null; context?: string | null; triggerAlertId: string }) => {
+    setDecForm({
+      title: prefill.title,
+      decision: prefill.decision ?? "",
+      context: prefill.context ?? "",
+      decided_on: new Date().toISOString().slice(0, 10),
+      category: "",
+    });
+    setDecTriggerAlertId(prefill.triggerAlertId);
+    setDecOpen(true);
+  };
+
+  const saveDecision = async () => {
+    if (!decForm.title.trim() || !decForm.decision.trim() || !decForm.decided_on || !user) return;
+    setDecSaving(true);
+    const { error } = await supabase.from("decisions").insert({
+      project_id: projectId,
+      title: decForm.title.trim(),
+      decision: decForm.decision.trim(),
+      context: decForm.context.trim() || null,
+      decided_on: decForm.decided_on,
+      decided_by: user.id,
+      category: decForm.category.trim() || null,
+    });
+    if (error) {
+      toast({ title: "Couldn't save decision", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Decision logged" });
+      qc.invalidateQueries({ queryKey: ["decisions", projectId] });
+      if (decTriggerAlertId) {
+        await supabase.from("watcher_alerts").update({ status: "acknowledged" }).eq("id", decTriggerAlertId);
+        qc.invalidateQueries({ queryKey: ["watcher-alerts", projectId] });
+        setDecTriggerAlertId(null);
+      }
+      setDecOpen(false);
+    }
+    setDecSaving(false);
+  };
+
+  const openTaskDialog = (prefill: { title: string; description: string | null; triggerAlertId: string }) => {
+    setTaskForm({
+      title: prefill.title,
+      description: prefill.description ?? "",
+      due_date: "",
+    });
+    setTaskTriggerAlertId(prefill.triggerAlertId);
+    setTaskOpen(true);
+  };
+
+  const saveTask = async () => {
+    if (!taskForm.title.trim() || !user) return;
+    setTaskSaving(true);
+    const { error } = await supabase.from("tasks").insert({
+      project_id: projectId,
+      title: taskForm.title.trim(),
+      description: taskForm.description.trim() || null,
+      due_date: taskForm.due_date || null,
+      status: "todo",
+    });
+    if (error) {
+      toast({ title: "Couldn't save task", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Task added" });
+      qc.invalidateQueries({ queryKey: ["tasks", projectId] });
+      if (taskTriggerAlertId) {
+        await supabase.from("watcher_alerts").update({ status: "acknowledged" }).eq("id", taskTriggerAlertId);
+        qc.invalidateQueries({ queryKey: ["watcher-alerts", projectId] });
+        setTaskTriggerAlertId(null);
+      }
+      setTaskOpen(false);
+    }
+    setTaskSaving(false);
   };
 
   const toggleTask = async (taskId: number, done: boolean) => {
@@ -1299,6 +1386,80 @@ export default function ProjectDetails() {
             </DialogContent>
           </Dialog>
 
+          {/* Log Decision Dialog (from decision_candidate alerts) */}
+          <Dialog open={decOpen} onOpenChange={setDecOpen}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Log Decision</DialogTitle>
+                <DialogDescription>
+                  Review the AI-suggested decision, edit as needed, then save to log it as an official project decision.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="dec-title">Title</Label>
+                  <Input id="dec-title" value={decForm.title} onChange={(e) => setDecForm({ ...decForm, title: e.target.value })} placeholder="Decision title" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="dec-decision">Decision</Label>
+                  <Textarea id="dec-decision" value={decForm.decision} onChange={(e) => setDecForm({ ...decForm, decision: e.target.value })} placeholder="What was decided" rows={3} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="dec-context">Context (optional)</Label>
+                  <Textarea id="dec-context" value={decForm.context} onChange={(e) => setDecForm({ ...decForm, context: e.target.value })} placeholder="Background or source message" rows={2} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="dec-date">Decided On</Label>
+                    <Input id="dec-date" type="date" value={decForm.decided_on} onChange={(e) => setDecForm({ ...decForm, decided_on: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="dec-category">Category (optional)</Label>
+                    <Input id="dec-category" value={decForm.category} onChange={(e) => setDecForm({ ...decForm, category: e.target.value })} placeholder="e.g. Materials, Layout" />
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDecOpen(false)} disabled={decSaving}>Cancel</Button>
+                <Button onClick={saveDecision} disabled={decSaving || !decForm.title.trim() || !decForm.decision.trim() || !decForm.decided_on}>
+                  {decSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Decision"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Add Task Dialog (from action_item_candidate alerts) */}
+          <Dialog open={taskOpen} onOpenChange={setTaskOpen}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Add Task</DialogTitle>
+                <DialogDescription>
+                  Review the AI-suggested task, edit as needed, then save to add it to the project task list.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="task-title">Title</Label>
+                  <Input id="task-title" value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })} placeholder="Task title" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="task-desc">Description (optional)</Label>
+                  <Textarea id="task-desc" value={taskForm.description} onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })} placeholder="Task details" rows={3} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="task-due">Due Date (optional)</Label>
+                  <Input id="task-due" type="date" value={taskForm.due_date} onChange={(e) => setTaskForm({ ...taskForm, due_date: e.target.value })} />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setTaskOpen(false)} disabled={taskSaving}>Cancel</Button>
+                <Button onClick={saveTask} disabled={taskSaving || !taskForm.title.trim()}>
+                  {taskSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add Task"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           {(changeOrders ?? []).length === 0 ? (
             <div className="text-center py-16 border border-dashed border-border rounded-xl">
               <AlertTriangle className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
@@ -1400,6 +1561,22 @@ export default function ProjectDetails() {
                             className="text-[11px] font-medium text-primary hover:text-primary/80 transition-colors"
                           >
                             Draft Change Order
+                          </button>
+                        )}
+                        {alert.source_type === "decision_candidate" && alert.status === "new" && (
+                          <button
+                            onClick={() => openDecisionDialog({ title: alert.title, decision: alert.description, triggerAlertId: alert.id })}
+                            className="text-[11px] font-medium text-primary hover:text-primary/80 transition-colors"
+                          >
+                            Log Decision
+                          </button>
+                        )}
+                        {alert.source_type === "action_item_candidate" && alert.status === "new" && (
+                          <button
+                            onClick={() => openTaskDialog({ title: alert.title, description: alert.description, triggerAlertId: alert.id })}
+                            className="text-[11px] font-medium text-primary hover:text-primary/80 transition-colors"
+                          >
+                            Add Task
                           </button>
                         )}
                         <button
