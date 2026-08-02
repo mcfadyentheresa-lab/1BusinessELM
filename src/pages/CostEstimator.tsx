@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
@@ -13,10 +13,11 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle, Info, Package, Eye, Gauge, Sparkles } from "lucide-react";
+import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle, Info, Package, Eye, Gauge, Sparkles, Paperclip, X, FileText } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { useUpload } from "@/hooks/use-upload";
 
 interface LineItem {
   id?: number;
@@ -256,6 +257,10 @@ export default function CostEstimator() {
   const [generating, setGenerating] = useState(false);
   const [draftSuggestions, setDraftSuggestions] = useState<any[] | null>(null);
   const [draftSelections, setDraftSelections] = useState<Record<number, { checked: boolean; assemblyId: string | null }>>({});
+  const [draftFiles, setDraftFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { uploadFile } = useUpload();
 
   useEffect(() => {
     if (estimate) {
@@ -512,10 +517,21 @@ export default function CostEstimator() {
         toast({ title: "Not signed in", variant: "destructive" });
         return;
       }
+      let fileRefs: { url: string; mime_type: string; name: string }[] = [];
+      if (draftFiles.length > 0) {
+        setUploading(true);
+        for (const file of draftFiles) {
+          const result = await uploadFile(file);
+          if (result) {
+            fileRefs.push({ url: result.objectPath, mime_type: file.type, name: file.name });
+          }
+        }
+        setUploading(false);
+      }
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/estimate-generator`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session.access_token}` },
-        body: JSON.stringify({ project_id: projectId }),
+        body: JSON.stringify({ project_id: projectId, files: fileRefs.length > 0 ? fileRefs : undefined }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error ?? `Generate failed (${res.status})`);
@@ -537,13 +553,16 @@ export default function CostEstimator() {
       const sel = draftSelections[s.category_id];
       const chosenAssembly = sel?.assemblyId ? s.assemblies?.find((a: any) => String(a.id) === sel.assemblyId) : null;
       const cat = (categories ?? []).find((c: any) => String(c.id) === String(s.category_id));
+      const hasQty = typeof s.quantity === "number" && s.quantity > 0;
+      const note = hasQty && s.quantity_source ? s.quantity_source : "";
       return {
         ...EMPTY_LINE_ITEM,
         category_id: String(s.category_id),
-        quantity: "",
+        quantity: hasQty ? String(s.quantity) : "",
         unit_type: s.unit_type ?? cat?.default_unit_type ?? "sq_ft",
         unit_cost: s.market_rate?.typical ?? "",
         material_cost: chosenAssembly ? String(chosenAssembly.material_cost_per_unit) : "",
+        notes: note,
         assembly_id: chosenAssembly ? String(chosenAssembly.id) : null,
         material_from_assembly: !!chosenAssembly,
         ai_suggested: true,
@@ -552,6 +571,7 @@ export default function CostEstimator() {
     setItems((prev) => [...prev, ...newItems]);
     setDraftSuggestions(null);
     setDraftSelections({});
+    setDraftFiles([]);
     toast({ title: `Added ${newItems.length} draft line item${newItems.length !== 1 ? "s" : ""}` });
   };
 
@@ -830,14 +850,58 @@ export default function CostEstimator() {
             })}
           </div>
           {!isLocked && (
-            <div className="flex items-center gap-2 mt-3">
-              <Button variant="outline" size="sm" className="gap-2" onClick={() => setItems((p) => [...p, { ...EMPTY_LINE_ITEM }])}>
-                <Plus className="h-4 w-4" /> Add line item
-              </Button>
-              <Button variant="outline" size="sm" className="gap-2" onClick={handleGenerateDraft} disabled={busy}>
-                {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                Generate Draft
-              </Button>
+            <div className="space-y-2 mt-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button variant="outline" size="sm" className="gap-2" onClick={() => setItems((p) => [...p, { ...EMPTY_LINE_ITEM }])}>
+                  <Plus className="h-4 w-4" /> Add line item
+                </Button>
+                <Button variant="outline" size="sm" className="gap-2" onClick={handleGenerateDraft} disabled={busy || generating || uploading}>
+                  {generating || uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  {uploading ? "Uploading files…" : generating ? "Generating…" : "Generate Draft"}
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files ?? []);
+                    setDraftFiles((prev) => [...prev, ...files]);
+                    e.target.value = "";
+                  }}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 text-muted-foreground"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={busy || generating || uploading}
+                >
+                  <Paperclip className="h-3.5 w-3.5" />
+                  {draftFiles.length > 0 ? `${draftFiles.length} file${draftFiles.length !== 1 ? "s" : ""} attached` : "Attach plans"}
+                </Button>
+              </div>
+              {draftFiles.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pl-1">
+                  {draftFiles.map((file, idx) => (
+                    <div key={idx} className="flex items-center gap-1.5 rounded-md border border-border bg-muted/30 px-2 py-1 text-xs">
+                      {file.type === "application/pdf" ? (
+                        <FileText className="h-3 w-3 text-muted-foreground" />
+                      ) : (
+                        <Paperclip className="h-3 w-3 text-muted-foreground" />
+                      )}
+                      <span className="max-w-[160px] truncate text-foreground">{file.name}</span>
+                      <button
+                        onClick={() => setDraftFiles((prev) => prev.filter((_, i) => i !== idx))}
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </CardContent>
@@ -1018,6 +1082,8 @@ interface DraftSuggestion {
   market_rate: { typical: string; low: string; high: string } | null;
   assemblies: Array<{ id: number; name: string; material_cost_per_unit: number }>;
   no_rate_data: boolean;
+  quantity: number | null;
+  quantity_source: string | null;
 }
 
 function GenerateDraftDialog({
@@ -1074,6 +1140,7 @@ function GenerateDraftDialog({
             {suggestions?.map((s) => {
               const sel = selections[s.category_id];
               const isChecked = sel?.checked ?? false;
+              const hasQty = typeof s.quantity === "number" && s.quantity > 0;
               return (
                 <div key={s.category_id} className={`rounded-lg border p-3 transition-colors ${isChecked ? "border-primary/40 bg-primary/5" : "border-border"}`}>
                   <div className="flex items-start gap-3">
@@ -1085,6 +1152,32 @@ function GenerateDraftDialog({
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">{s.reason}</p>
                       <div className="mt-2 space-y-1">
+                        {hasQty ? (
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-muted-foreground">Extracted qty:</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              className="w-24 rounded border border-border bg-muted/30 px-2 py-0.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                              value={s.quantity ?? ""}
+                              onChange={(e) => {
+                                onSelections({
+                                  ...selections,
+                                  [s.category_id]: { checked: true, assemblyId: sel?.assemblyId ?? null },
+                                });
+                              }}
+                              data-suggestion-qty={s.category_id}
+                            />
+                            <span className="text-muted-foreground">{s.unit_type ?? "unit"}</span>
+                            {s.quantity_source && (
+                              <span className="inline-flex items-center gap-1 text-[10px] text-blue-600 dark:text-blue-400">
+                                <FileText className="h-2.5 w-2.5" />
+                                {s.quantity_source}
+                              </span>
+                            )}
+                          </div>
+                        ) : null}
                         {s.market_rate ? (
                           <p className="text-xs text-muted-foreground">
                             Typical: ${s.market_rate.typical}/{s.unit_type} (range ${s.market_rate.low}-${s.market_rate.high})

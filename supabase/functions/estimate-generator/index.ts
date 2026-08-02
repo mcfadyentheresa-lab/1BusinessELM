@@ -10,6 +10,8 @@ const corsHeaders = {
 interface SuggestedCategory {
   category_id: number;
   reason: string;
+  quantity?: number | null;
+  quantity_source?: string | null;
 }
 
 interface AssemblyWithMaterials {
@@ -21,6 +23,12 @@ interface AssemblyWithMaterials {
     unit_cost: string;
     waste_pct: string;
   }>;
+}
+
+interface UploadedFileRef {
+  url: string;
+  mime_type: string;
+  name: string;
 }
 
 Deno.serve(async (req: Request) => {
@@ -64,7 +72,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // --- Parse input ---
-    let body: { project_id?: number } = {};
+    let body: { project_id?: number; files?: UploadedFileRef[] } = {};
     try {
       body = await req.json();
     } catch {
@@ -80,6 +88,8 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    const uploadedFiles = Array.isArray(body.files) ? body.files : [];
 
     // --- 1. Fetch the project ---
     const { data: project, error: projErr } = await db
@@ -141,7 +151,7 @@ Deno.serve(async (req: Request) => {
     let aiParseFailed = false;
 
     if (anthropicKey) {
-      const result = await suggestCategories(anthropicKey, project, categories ?? []);
+      const result = await suggestCategories(anthropicKey, project, categories ?? [], uploadedFiles);
       if (result === null) {
         aiParseFailed = true;
       } else {
@@ -160,6 +170,7 @@ Deno.serve(async (req: Request) => {
         const asms = assembliesByCategory.get(categoryId) ?? [];
         const hasRate = !!rate;
         const hasAssemblies = asms.length > 0;
+        const hasQuantity = typeof s.quantity === "number" && s.quantity > 0;
         return {
           category_id: categoryId,
           category_name: categoryName,
@@ -170,6 +181,8 @@ Deno.serve(async (req: Request) => {
             : null,
           assemblies: hasAssemblies ? asms : [],
           no_rate_data: !hasRate && !hasAssemblies,
+          quantity: hasQuantity ? s.quantity! : null,
+          quantity_source: hasQuantity ? (s.quantity_source ?? null) : null,
         };
       });
 
@@ -186,12 +199,16 @@ Deno.serve(async (req: Request) => {
 
 // -------------------------------------------------------
 // AI category suggestion via Anthropic (claude-haiku-4-5)
-// Returns array of {category_id, reason}, or null if parse fails.
+// Returns array of {category_id, reason, quantity?, quantity_source?}, or null if parse fails.
+// When files are provided, media content blocks are included and the prompt
+// instructs the model to extract real quantities from the documents/images.
+// When no files are provided, behavior is identical to the original (text-only, no quantities).
 // -------------------------------------------------------
 async function suggestCategories(
   apiKey: string,
   project: { name: string; description: string | null; address: string | null; city: string | null },
   categories: Array<{ id: number; name: string; default_unit_type: string }>,
+  files: UploadedFileRef[],
 ): Promise<SuggestedCategory[] | null> {
   try {
     const categoryList = categories
@@ -205,6 +222,70 @@ async function suggestCategories(
       project.city ? `City: ${project.city}` : null,
     ].filter(Boolean).join("\n");
 
+    const hasFiles = files.length > 0;
+
+    const systemPrompt = hasFiles
+      ? "You are a construction cost estimating expert. Given a project name, description, and uploaded plans/measurements (images and/or PDFs), you suggest which cost categories from a provided list are likely relevant to this project AND extract real quantities from the uploaded materials. " +
+        "This is a STARTING POINT for a human estimator to edit — it is NOT a final estimate. " +
+        "CRITICAL RULES:\n" +
+        "1. You may ONLY suggest categories from the provided list. NEVER invent a new category name or id.\n" +
+        "2. When uploaded files are provided, extract real measurements/quantities ONLY from what is visibly and legibly present in the provided images/documents. Tie each extracted quantity to a specific category suggestion. The quantity must be a number (e.g. square footage, linear footage, unit count).\n" +
+        "3. NEVER estimate, guess, or fabricate a quantity that is not legible/derivable from the actual provided material. If a category is relevant but no quantity is visible in the files, set quantity to null and quantity_source to null.\n" +
+        "4. For each quantity-bearing suggestion, include a quantity_source field set to the source file name (e.g. \"extracted from uploaded file: floor-plan.pdf\").\n" +
+        "5. Return categories in priority order (most relevant first), up to 10 for a full renovation.\n" +
+        "6. If the project has no description or details to reason from, return an EMPTY array. Do NOT pad with generic categories — returning fewer or zero is correct when you lack information.\n" +
+        "7. Each reason must be one short clause explaining why this category fits the project.\n" +
+        'Output ONLY strict JSON: {"suggested_categories": [{"category_id": <number from the list>, "reason": "<one short clause>", "quantity": <number or null>, "quantity_source": "<source file name or null>"}]}. ' +
+        "Do not include any other text."
+      : "You are a construction cost estimating expert. Given a project name and description, you suggest which cost categories from a provided list are likely relevant to this project. " +
+        "This is a STARTING POINT for a human estimator to edit — it is NOT a final estimate. " +
+        "CRITICAL RULES:\n" +
+        "1. You may ONLY suggest categories from the provided list. NEVER invent a new category name or id.\n" +
+        "2. Do NOT guess quantities, square footage, room counts, or any measurement. That information is not available and must not be fabricated.\n" +
+        "3. Return categories in priority order (most relevant first), up to 10 for a full renovation.\n" +
+        "4. If the project has no description or details to reason from, return an EMPTY array. Do NOT pad with generic categories — returning fewer or zero is correct when you lack information.\n" +
+        "5. Each reason must be one short clause explaining why this category fits the project.\n" +
+        'Output ONLY strict JSON: {"suggested_categories": [{"category_id": <number from the list>, "reason": "<one short clause>"}]}. ' +
+        "Do not include any other text.";
+
+    // Build media content blocks (images/documents first, text last)
+    const contentBlocks: Array<Record<string, any>> = [];
+
+    for (const file of files) {
+      if (file.mime_type === "application/pdf") {
+        contentBlocks.push({
+          type: "document",
+          source: { type: "url", url: file.url },
+        });
+      } else if (
+        file.mime_type === "image/jpeg" ||
+        file.mime_type === "image/jpg" ||
+        file.mime_type === "image/png" ||
+        file.mime_type === "image/webp" ||
+        file.mime_type === "image/gif"
+      ) {
+        contentBlocks.push({
+          type: "image",
+          source: { type: "url", url: file.url },
+        });
+      }
+    }
+
+    const textPrompt =
+      `Available cost categories (id: name (unit_type)):\n${categoryList}\n\n` +
+      `Project:\n${projectDescription}\n\n` +
+      (hasFiles
+        ? `Uploaded files: ${files.map((f) => f.name).join(", ")}\n\n` +
+          "Which of these categories are likely relevant to this project? " +
+          "For each category, extract any real quantity visible in the uploaded files (dimensions, areas, counts). " +
+          "Only include a quantity if it is directly legible from the uploaded material. " +
+          "Set quantity_source to the file name where the quantity was found. " +
+          "If a category is relevant but no quantity is visible, set quantity to null. " +
+          "Remember: only use category ids from the list above, never guess quantities, and return an empty array if there is not enough project information to make a confident suggestion."
+        : "Which of these categories are likely relevant to this project? Remember: only use category ids from the list above, do not guess quantities, and return an empty array if there is not enough project information to make a confident suggestion.");
+
+    contentBlocks.push({ type: "text", text: textPrompt });
+
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -214,24 +295,11 @@ async function suggestCategories(
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5",
-        max_tokens: 1024,
-        system:
-          "You are a construction cost estimating expert. Given a project name and description, you suggest which cost categories from a provided list are likely relevant to this project. " +
-          "This is a STARTING POINT for a human estimator to edit — it is NOT a final estimate. " +
-          "CRITICAL RULES:\n" +
-          "1. You may ONLY suggest categories from the provided list. NEVER invent a new category name or id.\n" +
-          "2. Do NOT guess quantities, square footage, room counts, or any measurement. That information is not available and must not be fabricated.\n" +
-          "3. Return categories in priority order (most relevant first), up to 10 for a full renovation.\n" +
-          "4. If the project has no description or details to reason from, return an EMPTY array. Do NOT pad with generic categories — returning fewer or zero is correct when you lack information.\n" +
-          "5. Each reason must be one short clause explaining why this category fits the project.\n" +
-          'Output ONLY strict JSON: {"suggested_categories": [{"category_id": <number from the list>, "reason": "<one short clause>"}]}. ' +
-          "Do not include any other text.",
+        max_tokens: hasFiles ? 2048 : 1024,
+        system: systemPrompt,
         messages: [{
           role: "user",
-          content:
-            `Available cost categories (id: name (unit_type)):\n${categoryList}\n\n` +
-            `Project:\n${projectDescription}\n\n` +
-            "Which of these categories are likely relevant to this project? Remember: only use category ids from the list above, do not guess quantities, and return an empty array if there is not enough project information to make a confident suggestion.",
+          content: contentBlocks,
         }],
       }),
     });
@@ -246,7 +314,19 @@ async function suggestCategories(
     if (!Array.isArray(suggested)) return null;
     return suggested
       .filter((s: any) => typeof s === "object" && s !== null && typeof s.category_id === "number" && typeof s.reason === "string")
-      .map((s: any) => ({ category_id: s.category_id, reason: s.reason.trim() }))
+      .map((s: any) => {
+        const result: SuggestedCategory = { category_id: s.category_id, reason: s.reason.trim() };
+        if (hasFiles) {
+          if (typeof s.quantity === "number" && s.quantity > 0) {
+            result.quantity = s.quantity;
+            result.quantity_source = typeof s.quantity_source === "string" ? s.quantity_source.trim() : null;
+          } else {
+            result.quantity = null;
+            result.quantity_source = null;
+          }
+        }
+        return result;
+      })
       .slice(0, 10);
   } catch {
     return null;
