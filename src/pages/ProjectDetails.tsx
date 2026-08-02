@@ -675,7 +675,7 @@ export default function ProjectDetails() {
                       )}
                     </CardTitle>
                     {isAdmin && (
-                      <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs">
+                      <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => openTaskDialog({ title: "", description: null, triggerAlertId: "" })}>
                         <Plus className="h-3 w-3" /> Add
                       </Button>
                     )}
