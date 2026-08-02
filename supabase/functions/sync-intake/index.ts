@@ -55,6 +55,38 @@ Deno.serve(async (req: Request) => {
     const body: SyncPayload = await req.json();
     const { projects, pendingReviewCount, priorityTaskTitle } = body;
 
+    // TEMP-INSPECT-BRANCH: read-only inspection of external tables for test-data cleanup
+    if (body.source === "__inspect__") {
+      const [elmState, dailyItems, allSnapshots] = await Promise.all([
+        db.from("elm_state").select("*").is("user_id", null),
+        db.from("daily_items").select("*").eq("source_app", "elm").ilike("title", "%Test priority task%"),
+        db.from("context_snapshots").select("*"),
+      ]);
+      const testSnapshots = (allSnapshots.data || []).filter((s: any) => {
+        try {
+          const d = typeof s.upcoming_deadlines === "string" ? JSON.parse(s.upcoming_deadlines) : s.upcoming_deadlines;
+          return Array.isArray(d) && d.some((x: any) => x?.title === "Verification Test Project");
+        } catch { return false; }
+      });
+      const emptySnapshots = (allSnapshots.data || []).filter((s: any) => {
+        try {
+          const d = typeof s.upcoming_deadlines === "string" ? JSON.parse(s.upcoming_deadlines) : s.upcoming_deadlines;
+          return Array.isArray(d) && d.length === 0;
+        } catch { return false; }
+      });
+      return new Response(JSON.stringify({
+        elm_state: { count: elmState.data?.length ?? 0, rows: elmState.data, error: elmState.error?.message },
+        daily_items: { count: dailyItems.data?.length ?? 0, rows: dailyItems.data, error: dailyItems.error?.message },
+        context_snapshots: {
+          total_count: allSnapshots.data?.length ?? 0,
+          total_error: allSnapshots.error?.message,
+          test_rows: testSnapshots,
+          empty_deadlines_rows: emptySnapshots,
+        },
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    // END-TEMP-INSPECT-BRANCH
+
     const activeStatuses = ["active", "in_progress", "scheduled"];
     const activeProjects = projects.filter((p) => activeStatuses.includes(p.status));
 
