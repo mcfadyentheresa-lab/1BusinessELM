@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { Plus, FileText, Loader2, ArrowLeft, ChevronRight } from "lucide-react";
+import { Plus, FileText, Loader2, ArrowLeft, ChevronRight, Pencil } from "lucide-react";
 
 interface EstimateWithItems {
   id: number;
@@ -55,6 +55,9 @@ export default function EstimatesList() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<{ id: number; name: string } | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renaming, setRenaming] = useState(false);
 
   const { data: project } = useQuery({
     queryKey: ["project", pid],
@@ -105,6 +108,21 @@ export default function EstimatesList() {
       toast({ title: "Couldn't create estimate", description: e.message, variant: "destructive" });
     }
     setCreating(false);
+  };
+
+  const handleRename = async () => {
+    if (!renameTarget || !renameValue.trim()) return;
+    setRenaming(true);
+    try {
+      const { error } = await supabase.from("project_estimates").update({ name: renameValue.trim() }).eq("id", renameTarget.id);
+      if (error) throw error;
+      qc.invalidateQueries({ queryKey: ["project-estimates", pid] });
+      setRenameTarget(null);
+      toast({ title: "Estimate renamed" });
+    } catch (e: any) {
+      toast({ title: "Rename failed", description: e.message, variant: "destructive" });
+    }
+    setRenaming(false);
   };
 
   return (
@@ -158,6 +176,13 @@ export default function EstimatesList() {
                     >
                       {est.status}
                     </Badge>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setRenameTarget({ id: est.id, name: est.name }); setRenameValue(est.name); }}
+                      className="text-muted-foreground/40 hover:text-foreground transition-colors"
+                      title="Rename"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {est.created_at ? formatDate(est.created_at) : ""}
@@ -203,6 +228,30 @@ export default function EstimatesList() {
             <Button onClick={handleCreate} disabled={creating}>
               {creating && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
               Create estimate
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!renameTarget} onOpenChange={(o) => { if (!o) setRenameTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rename estimate</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 mt-1">
+            <Input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter" && !renaming && renameValue.trim()) handleRename(); }}
+              placeholder="e.g. Budget Option"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setRenameTarget(null)}>Cancel</Button>
+            <Button onClick={handleRename} disabled={renaming || !renameValue.trim()}>
+              {renaming && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              Save name
             </Button>
           </DialogFooter>
         </DialogContent>

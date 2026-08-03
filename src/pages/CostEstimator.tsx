@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle, Info, Package, Eye, Gauge, Sparkles, Paperclip, X, FileText, ArrowLeft, ChevronRight } from "lucide-react";
+import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle, Info, Package, Eye, Gauge, Sparkles, Paperclip, X, FileText, ArrowLeft, ChevronRight, Pencil } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -281,6 +281,9 @@ export default function CostEstimator() {
   const [reviewing, setReviewing] = useState(false);
   const [showIgnored, setShowIgnored] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [renaming, setRenaming] = useState(false);
   const [draftSuggestions, setDraftSuggestions] = useState<any[] | null>(null);
   const [draftSelections, setDraftSelections] = useState<Record<number, { checked: boolean; assemblyId: string | null }>>({});
   const [draftFiles, setDraftFiles] = useState<File[]>([]);
@@ -436,6 +439,23 @@ export default function CostEstimator() {
       toast({ title: "Error saving", description: e.message, variant: "destructive" });
     }
     setSaving(false);
+  };
+
+  const handleRename = async () => {
+    const name = renameValue.trim();
+    if (!name) return;
+    setRenaming(true);
+    try {
+      const { error } = await supabase.from("project_estimates").update({ name }).eq("id", estimateIdFromRoute);
+      if (error) throw error;
+      qc.invalidateQueries({ queryKey: ["estimate", estimateIdFromRoute] });
+      qc.invalidateQueries({ queryKey: ["project-estimates", projectId] });
+      setRenameOpen(false);
+      toast({ title: "Estimate renamed" });
+    } catch (e: any) {
+      toast({ title: "Rename failed", description: e.message, variant: "destructive" });
+    }
+    setRenaming(false);
   };
 
   const handleAudit = async () => {
@@ -600,9 +620,15 @@ export default function CostEstimator() {
         <div>
           <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">{project?.name}{project?.code ? ` · ${project.code}` : ""}</p>
           <div className="flex items-center gap-2.5">
-            <h1 className="text-3xl font-bold text-foreground leading-tight" style={{ fontFamily: "var(--font-serif)", letterSpacing: "-0.025em" }}>
-              {estimate?.name || "Cost Estimator"}
-            </h1>
+            <button
+              onClick={() => { setRenameValue(estimate?.name ?? ""); setRenameOpen(true); }}
+              className="group flex items-center gap-2 hover:opacity-80 transition-opacity"
+            >
+              <h1 className="text-3xl font-bold text-foreground leading-tight" style={{ fontFamily: "var(--font-serif)", letterSpacing: "-0.025em" }}>
+                {estimate?.name || "Cost Estimator"}
+              </h1>
+              {!isLocked && <Pencil className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />}
+            </button>
             {isLocked && <Badge variant="secondary" className="gap-1 shrink-0"><Lock className="h-3 w-3" /> Locked</Badge>}
           </div>
         </div>
@@ -1089,6 +1115,30 @@ export default function CostEstimator() {
         onAdd={handleAddDraftItems}
         onCancel={() => { setDraftSuggestions(null); setDraftSelections({}); }}
       />
+
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rename estimate</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 mt-1">
+            <Input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter" && !renaming && renameValue.trim()) handleRename(); }}
+              placeholder="e.g. Budget Option"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setRenameOpen(false)}>Cancel</Button>
+            <Button onClick={handleRename} disabled={renaming || !renameValue.trim()}>
+              {renaming && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              Save name
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
