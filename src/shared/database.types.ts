@@ -1827,7 +1827,7 @@ export interface Database {
         Row: {
           id: number;
           token: string;
-          project_id: number;
+          project_id: number | null;
           first_name: string;
           last_name: string;
           email: string;
@@ -1842,7 +1842,7 @@ export interface Database {
         };
         Insert: {
           token: string;
-          project_id: number;
+          project_id?: number | null;
           first_name: string;
           last_name: string;
           email: string;
@@ -1856,7 +1856,7 @@ export interface Database {
         };
         Update: {
           token?: string;
-          project_id?: number;
+          project_id?: number | null;
           first_name?: string;
           last_name?: string;
           email?: string;

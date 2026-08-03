@@ -20,6 +20,7 @@ interface InviteData {
   email: string;
   role: string;
   status: string;
+  project_id: number | null;
 }
 
 export default function AcceptInvite() {
@@ -36,7 +37,7 @@ export default function AcceptInvite() {
     if (!params.token) return;
     supabase
       .from("client_invites")
-      .select("first_name, last_name, email, role, status")
+      .select("first_name, last_name, email, role, status, project_id")
       .eq("token", params.token)
       .maybeSingle()
       .then(({ data, error }) => {
@@ -77,9 +78,23 @@ export default function AcceptInvite() {
       setLoading(false);
       return;
     }
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const newUserId = session?.user?.id;
+
+    if (role === "client" && invite.project_id && newUserId) {
+      const { error: linkError } = await supabase
+        .from("projects")
+        .update({ client_id: newUserId })
+        .eq("id", invite.project_id);
+      if (linkError) {
+        toast({ title: "Account created, but project link failed", description: linkError.message, variant: "destructive" });
+      }
+    }
+
     await supabase
       .from("client_invites")
-      .update({ status: "accepted", accepted_at: new Date().toISOString() })
+      .update({ status: "accepted", accepted_at: new Date().toISOString(), user_id: newUserId ?? undefined })
       .eq("token", params.token);
 
     setDone(true);

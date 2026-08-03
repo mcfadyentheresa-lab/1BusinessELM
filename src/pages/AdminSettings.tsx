@@ -15,7 +15,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "@/hooks/use-toast";
 import { Building2, Users, MessageSquare, Zap, Key, Plus, Loader2, Mail, Phone, UserCircle, Trash2, Shield, Copy, Check, Camera, ImageIcon, X } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Profile, FeatureFlag, ClientInvite, TenantSettingsPatch, TenantSettingsInsert, ClientInviteInsert } from "@/lib/mappers";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function AdminSettings() {
   const qc = useQueryClient();
@@ -23,8 +25,12 @@ export default function AdminSettings() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("crew");
+  const [inviteProjectId, setInviteProjectId] = useState<number | null>(null);
+  const [inviteFirstName, setInviteFirstName] = useState("");
+  const [inviteLastName, setInviteLastName] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const { user } = useAuth();
   const [uploadingFor, setUploadingFor] = useState<string | null>(null);
   const [uploadingHero, setUploadingHero] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -142,6 +148,17 @@ export default function AdminSettings() {
     },
   });
 
+  const { data: projects } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["invite-projects"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("projects")
+        .select("id, name")
+        .order("name");
+      return (data ?? []) as { id: number; name: string }[];
+    },
+  });
+
   const [brandName, setBrandName] = useState("");
   const [supportEmail, setSupportEmail] = useState("");
 
@@ -173,6 +190,14 @@ export default function AdminSettings() {
 
   const handleSendInvite = async () => {
     if (!inviteEmail) return;
+    if (inviteRole === "client" && !inviteProjectId) {
+      toast({ title: "Select a project", description: "Client invites must be tied to a specific project.", variant: "destructive" });
+      return;
+    }
+    if (!user?.id) {
+      toast({ title: "Authentication error", description: "Could not determine your account. Please re-sign in.", variant: "destructive" });
+      return;
+    }
     setInviteSending(true);
     try {
       const token = crypto.randomUUID();
@@ -181,18 +206,23 @@ export default function AdminSettings() {
         token,
         role: inviteRole,
         status: "pending",
-        project_id: 0,
-        first_name: "",
-        last_name: "",
-        created_by: "admin",
+        project_id: inviteRole === "client" ? inviteProjectId : null,
+        first_name: inviteFirstName.trim(),
+        last_name: inviteLastName.trim(),
+        created_by: user.id,
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       };
-      await supabase.from("client_invites").insert(invite);
+      const { error: insertError } = await supabase.from("client_invites").insert(invite);
+      if (insertError) throw insertError;
       qc.invalidateQueries({ queryKey: ["client-invites"] });
       const inviteLink = `${window.location.origin}/accept-invite/${token}`;
       await navigator.clipboard.writeText(inviteLink).catch(() => {});
       toast({ title: "Invite created", description: "Invite link copied to clipboard." });
       setInviteEmail("");
+      setInviteFirstName("");
+      setInviteLastName("");
+      setInviteProjectId(null);
+      setInviteRole("crew");
       setInviteOpen(false);
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -493,6 +523,24 @@ export default function AdminSettings() {
             <DialogTitle>Invite team member</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>First name</Label>
+                <Input
+                  placeholder="Jane"
+                  value={inviteFirstName}
+                  onChange={(e) => setInviteFirstName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Last name</Label>
+                <Input
+                  placeholder="Doe"
+                  value={inviteLastName}
+                  onChange={(e) => setInviteLastName(e.target.value)}
+                />
+              </div>
+            </div>
             <div className="space-y-2">
               <Label>Email address</Label>
               <Input
@@ -508,7 +556,10 @@ export default function AdminSettings() {
                 {["crew", "client", "admin"].map((r) => (
                   <button
                     key={r}
-                    onClick={() => setInviteRole(r)}
+                    onClick={() => {
+                      setInviteRole(r);
+                      if (r !== "client") setInviteProjectId(null);
+                    }}
                     className={`flex-1 py-2 rounded-lg border text-sm font-medium capitalize transition-colors ${
                       inviteRole === r
                         ? "bg-primary text-primary-foreground border-primary"
@@ -520,9 +571,34 @@ export default function AdminSettings() {
                 ))}
               </div>
             </div>
+            {inviteRole === "client" && (
+              <div className="space-y-2">
+                <Label>Project</Label>
+                <Select
+                  value={inviteProjectId !== null ? String(inviteProjectId) : undefined}
+                  onValueChange={(v) => setInviteProjectId(Number(v))}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select a project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(projects ?? []).map((p) => (
+                      <SelectItem key={p.id} value={String(p.id)}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">The client will only see this project after accepting.</p>
+              </div>
+            )}
             <div className="flex gap-2 pt-2">
               <Button variant="outline" className="flex-1" onClick={() => setInviteOpen(false)}>Cancel</Button>
-              <Button className="flex-1 gap-2" onClick={handleSendInvite} disabled={inviteSending || !inviteEmail}>
+              <Button
+                className="flex-1 gap-2"
+                onClick={handleSendInvite}
+                disabled={inviteSending || !inviteEmail || (inviteRole === "client" && !inviteProjectId)}
+              >
                 {inviteSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
                 Send invite
               </Button>
