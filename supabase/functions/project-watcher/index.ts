@@ -28,6 +28,35 @@ Deno.serve(async (req: Request) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const db = createClient(supabaseUrl, serviceKey);
 
+    // --- Auth: verify JWT + admin role ---
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const token = authHeader.replace("Bearer ", "").trim();
+    if (!token) {
+      return new Response(JSON.stringify({ error: "Missing auth token" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { data: userData, error: userErr } = await db.auth.getUser(token);
+    if (userErr || !userData.user) {
+      return new Response(JSON.stringify({ error: "Invalid auth token" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { data: profile } = await db
+      .from("profiles")
+      .select("role")
+      .eq("id", userData.user.id)
+      .maybeSingle();
+    const role = (profile as any)?.role ?? userData.user.app_metadata?.role ?? null;
+    if (role !== "admin") {
+      return new Response(JSON.stringify({ error: "Admin access required" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     let body: { check?: string; debug?: boolean } = {};
     try {
       body = await req.json();
