@@ -9652,6 +9652,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         <SheetContent
           side="right"
           className="w-[480px] sm:max-w-[480px] p-0 flex flex-col"
+          hideOverlay
           onInteractOutside={(e) => e.preventDefault()}
           data-testid="sheet-drawer-materials"
         >
