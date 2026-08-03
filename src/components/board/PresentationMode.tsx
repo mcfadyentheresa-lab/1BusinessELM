@@ -13,17 +13,18 @@ interface PresentationModeProps {
   onClose: () => void;
 }
 
-interface BoardItem {
+interface CanvasElement {
   id: number;
   type: string;
-  content: string | null;
-  image_url: string | null;
-  title: string | null;
-  notes: string | null;
-  position_x: number;
-  position_y: number;
-  width: number;
-  height: number;
+  content: Record<string, any> | null;
+}
+
+interface PaintColor {
+  id: number;
+  name: string;
+  hex: string;
+  brand?: string | null;
+  collection?: string | null;
 }
 
 export function PresentationMode({ projectId, boardId, onClose }: PresentationModeProps) {
@@ -65,15 +66,15 @@ export function PresentationMode({ projectId, boardId, onClose }: PresentationMo
     },
   });
 
-  const { data: boardItems } = useQuery({
-    queryKey: ["board-items", board?.id],
+  const { data: canvasElements } = useQuery({
+    queryKey: ["presentation-canvas-elements", board?.id],
     queryFn: async () => {
       const { data } = await supabase
-        .from("board_items")
-        .select("*")
-        .eq("project_id", board!.id)
+        .from("canvas_elements")
+        .select("id, type, content")
+        .eq("board_id", board!.id)
         .order("created_at");
-      return (data ?? []) as unknown as BoardItem[];
+      return (data ?? []) as unknown as CanvasElement[];
     },
     enabled: !!board?.id,
   });
@@ -90,16 +91,26 @@ export function PresentationMode({ projectId, boardId, onClose }: PresentationMo
     },
   });
 
-  const { data: paintColors } = useQuery({
-    queryKey: ["paint-colors-presentation", projectId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("paint_colors")
-        .select("*")
-        .order("name");
-      return data ?? [];
-    },
-  });
+  const paintColors: PaintColor[] = (() => {
+    const seen = new Set<string>();
+    const colors: PaintColor[] = [];
+    for (const el of canvasElements ?? []) {
+      if (el.type !== "surface" || !el.content) continue;
+      const c = el.content;
+      if (c.kind !== "paint" || !c.name || !c.hex) continue;
+      const key = `${c.name}|${c.hex}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      colors.push({
+        id: el.id,
+        name: c.name,
+        hex: c.hex,
+        brand: c.brand ?? null,
+        collection: c.collection ?? null,
+      });
+    }
+    return colors.sort((a, b) => a.name.localeCompare(b.name));
+  })();
 
   // Build slides
   const slides: Array<{ type: string; data?: any }> = [];
@@ -107,8 +118,10 @@ export function PresentationMode({ projectId, boardId, onClose }: PresentationMo
   // Slide 0: Hero
   slides.push({ type: "hero" });
 
-  // Slide 1: Inspiration images from board items
-  const imageItems = (boardItems ?? []).filter((item) => item.type === "image" && item.image_url);
+  // Slide 1: Inspiration images from canvas elements
+  const imageItems = (canvasElements ?? []).filter(
+    (el) => el.type === "image" && el.content?.url
+  );
   if (imageItems.length > 0) {
     slides.push({ type: "inspiration", data: imageItems });
   }
@@ -131,8 +144,10 @@ export function PresentationMode({ projectId, boardId, onClose }: PresentationMo
     });
   }
 
-  // Slide 4: Notes from board items
-  const noteItems = (boardItems ?? []).filter((item) => item.type === "text" && item.content);
+  // Slide 4: Notes from canvas text elements
+  const noteItems = (canvasElements ?? []).filter(
+    (el) => el.type === "text" && el.content?.body
+  );
   if (noteItems.length > 0) {
     slides.push({ type: "notes", data: noteItems });
   }
@@ -274,19 +289,19 @@ export function PresentationMode({ projectId, boardId, onClose }: PresentationMo
             <div
               className="w-full h-full grid gap-1"
               style={{
-                gridTemplateColumns: `repeat(${Math.min((currentSlide.data as BoardItem[]).length, 3)}, 1fr)`,
+                gridTemplateColumns: `repeat(${Math.min((currentSlide.data as CanvasElement[]).length, 3)}, 1fr)`,
               }}
             >
-              {(currentSlide.data as BoardItem[]).slice(0, 6).map((item: BoardItem, i: number) => (
-                <div key={item.id} className={cn("overflow-hidden relative", i === 0 && (currentSlide.data as BoardItem[]).length > 1 ? "row-span-2" : "")}>
+              {(currentSlide.data as CanvasElement[]).slice(0, 6).map((item: CanvasElement, i: number) => (
+                <div key={item.id} className={cn("overflow-hidden relative", i === 0 && (currentSlide.data as CanvasElement[]).length > 1 ? "row-span-2" : "")}>
                   <img
-                    src={item.image_url!}
-                    alt={item.title ?? ""}
+                    src={item.content!.url}
+                    alt={item.content?.caption ?? ""}
                     className="w-full h-full object-cover"
                   />
-                  {item.title && (
+                  {item.content?.caption && (
                     <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/60 to-transparent">
-                      <p className="text-white text-xs font-sans truncate">{item.title}</p>
+                      <p className="text-white text-xs font-sans truncate">{item.content.caption}</p>
                     </div>
                   )}
                 </div>
@@ -305,7 +320,7 @@ export function PresentationMode({ projectId, boardId, onClose }: PresentationMo
                   <div
                     className="rounded-2xl shadow-2xl"
                     style={{
-                      backgroundColor: color.hex_code ?? "#ccc",
+                      backgroundColor: color.hex ?? "#ccc",
                       width: "clamp(80px, 10vw, 140px)",
                       height: "clamp(120px, 15vw, 200px)",
                     }}
@@ -315,8 +330,8 @@ export function PresentationMode({ projectId, boardId, onClose }: PresentationMo
                     {color.collection && (
                       <p className="text-white/40 text-xs font-sans mt-0.5">{color.collection}</p>
                     )}
-                    {color.hex_code && (
-                      <p className="text-white/30 text-xs font-mono mt-0.5">{color.hex_code.toUpperCase()}</p>
+                    {color.hex && (
+                      <p className="text-white/30 text-xs font-mono mt-0.5">{color.hex.toUpperCase()}</p>
                     )}
                   </div>
                 </div>
@@ -363,13 +378,13 @@ export function PresentationMode({ projectId, boardId, onClose }: PresentationMo
           <div className="w-full h-full bg-amber-50 flex flex-col items-center justify-center px-8 md:px-16">
             <h2 className="text-stone-400 text-xs uppercase tracking-widest font-sans mb-12">Design Notes</h2>
             <div className="max-w-4xl w-full space-y-6">
-              {(currentSlide.data as BoardItem[]).slice(0, 4).map((item: BoardItem) => (
+              {(currentSlide.data as CanvasElement[]).slice(0, 4).map((item: CanvasElement) => (
                 <div key={item.id} className="border-l-2 border-stone-300 pl-6">
-                  {item.title && (
-                    <h3 className="text-stone-600 text-sm uppercase tracking-wider font-sans mb-2">{item.title}</h3>
+                  {item.content?.title && (
+                    <h3 className="text-stone-600 text-sm uppercase tracking-wider font-sans mb-2">{item.content.title}</h3>
                   )}
                   <p className="text-stone-800 text-xl md:text-2xl leading-relaxed" style={{ letterSpacing: "-0.01em" }}>
-                    {item.content}
+                    {item.content?.body}
                   </p>
                 </div>
               ))}
