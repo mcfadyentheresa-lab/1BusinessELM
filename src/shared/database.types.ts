@@ -2031,7 +2031,46 @@ export interface Database {
       };
     };
     Views: {};
-    Functions: {};
+    Functions: {
+      get_public_presentation: {
+        Args: { p_token: string };
+        Returns: {
+          project: {
+            id: number;
+            name: string;
+            description: string | null;
+            address: string | null;
+            city: string | null;
+            phase: string | null;
+            start_date: string | null;
+            end_date: string | null;
+            thumbnail_url: string | null;
+            hero_focal_x: number | null;
+            hero_focal_y: number | null;
+            hero_zoom: number | null;
+          };
+          milestones: {
+            id: number;
+            title: string;
+            date: string | null;
+            completed: boolean | null;
+            order: number | null;
+          }[];
+          photos: {
+            id: number;
+            url: string;
+            caption: string | null;
+          }[];
+          selections: {
+            id: number;
+            name: string;
+            supplier_name: string | null;
+            category: string | null;
+            notes: string | null;
+          }[];
+        } | null;
+      };
+    };
     Enums: {};
   };
 }

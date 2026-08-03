@@ -4,81 +4,74 @@ import { supabase } from "@/lib/supabase";
 import { useTenantBrand } from "@/hooks/use-tenant-brand";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { MapPin, Calendar, Package, CheckSquare } from "lucide-react";
+
+type PublicProject = {
+  id: number;
+  name: string;
+  description: string | null;
+  address: string | null;
+  city: string | null;
+  phase: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  thumbnail_url: string | null;
+  hero_focal_x: number | null;
+  hero_focal_y: number | null;
+  hero_zoom: number | null;
+};
+
+type PublicMilestone = {
+  id: number;
+  title: string;
+  date: string | null;
+  completed: boolean | null;
+  order: number | null;
+};
+
+type PublicPhoto = {
+  id: number;
+  url: string;
+  caption: string | null;
+};
+
+type PublicSelection = {
+  id: number;
+  name: string;
+  supplier_name: string | null;
+  category: string | null;
+  notes: string | null;
+};
+
+type PublicPresentationData = {
+  project: PublicProject;
+  milestones: PublicMilestone[];
+  photos: PublicPhoto[];
+  selections: PublicSelection[];
+};
 
 export default function PublicPresentation() {
   const { token } = useParams<{ token: string }>();
   const brand = useTenantBrand();
 
-  const { data: tokenData, isLoading: tokenLoading } = useQuery({
-    queryKey: ["presentation-token", token],
+  const { data, isLoading } = useQuery({
+    queryKey: ["public-presentation", token],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("board_presentation_tokens")
-        .select("*, board:planning_boards(id, title, project_id)")
-        .eq("token", token)
-        .maybeSingle();
-      return data as (typeof data & { board?: { id: number; title: string; project_id: number } | null }) | null;
+      const { data, error } = await supabase.rpc("get_public_presentation", {
+        p_token: token,
+      });
+      if (error) throw error;
+      return data as PublicPresentationData | null;
     },
   });
 
-  const projectId = tokenData?.board?.project_id;
+  const project = data?.project ?? null;
+  const milestones = data?.milestones ?? [];
+  const photos = data?.photos ?? [];
+  const selections = data?.selections ?? [];
 
-  const { data: project, isLoading: projectLoading } = useQuery({
-    queryKey: ["public-project", projectId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("projects")
-        .select("*")
-        .eq("id", projectId!)
-        .maybeSingle();
-      return data;
-    },
-    enabled: !!projectId,
-  });
-
-  const { data: selections } = useQuery({
-    queryKey: ["public-selections", projectId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("selections")
-        .select("*")
-        .eq("project_id", projectId!)
-        .order("created_at");
-      return data ?? [];
-    },
-    enabled: !!projectId,
-  });
-
-  const { data: milestones } = useQuery({
-    queryKey: ["public-milestones", projectId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("milestones")
-        .select("*")
-        .eq("project_id", projectId!)
-        .order("order");
-      return data ?? [];
-    },
-    enabled: !!projectId,
-  });
-
-  const { data: photos } = useQuery({
-    queryKey: ["public-photos", projectId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("photos")
-        .select("*")
-        .eq("project_id", projectId!)
-        .order("taken_at", { ascending: false })
-        .limit(12);
-      return data ?? [];
-    },
-    enabled: !!projectId,
-  });
-
-  if (tokenLoading || projectLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-stone-50 flex items-center justify-center">
         <div className="w-full max-w-4xl p-8 space-y-6">
@@ -92,7 +85,7 @@ export default function PublicPresentation() {
     );
   }
 
-  if (!tokenData || !project) {
+  if (!data || !project) {
     return (
       <div className="min-h-screen bg-stone-50 flex items-center justify-center">
         <div className="text-center">
@@ -105,7 +98,7 @@ export default function PublicPresentation() {
     );
   }
 
-  const completedMilestones = (milestones ?? []).filter((m: any) => m.completed).length;
+  const completedMilestones = milestones.filter((m) => m.completed).length;
 
   return (
     <div className="min-h-screen bg-stone-50 font-sans">
@@ -176,10 +169,10 @@ export default function PublicPresentation() {
               <p className="text-white font-semibold mt-1">{formatDate(project.end_date)}</p>
             </div>
           )}
-          {(milestones ?? []).length > 0 && (
+          {milestones.length > 0 && (
             <div>
               <p className="text-stone-400 text-xs uppercase tracking-wider">Progress</p>
-              <p className="text-white font-semibold mt-1">{completedMilestones} / {(milestones ?? []).length} milestones</p>
+              <p className="text-white font-semibold mt-1">{completedMilestones} / {milestones.length} milestones</p>
             </div>
           )}
         </div>
@@ -187,7 +180,7 @@ export default function PublicPresentation() {
 
       <div className="max-w-5xl mx-auto px-6 py-16 space-y-20">
         {/* Photo Gallery */}
-        {(photos ?? []).length > 0 && (
+        {photos.length > 0 && (
           <section>
             <h2
               className="text-2xl font-bold text-stone-900 mb-8"
@@ -196,7 +189,7 @@ export default function PublicPresentation() {
               Progress Photos
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {(photos ?? []).map((photo: any, i: number) => (
+              {photos.map((photo, i) => (
                 <div
                   key={photo.id}
                   className={`overflow-hidden rounded-xl bg-stone-100 ${i === 0 ? "col-span-2 row-span-2" : ""}`}
@@ -214,7 +207,7 @@ export default function PublicPresentation() {
         )}
 
         {/* Selections */}
-        {(selections ?? []).length > 0 && (
+        {selections.length > 0 && (
           <section>
             <div className="flex items-center gap-3 mb-8">
               <Package className="h-5 w-5 text-stone-400" />
@@ -226,15 +219,11 @@ export default function PublicPresentation() {
               </h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {(selections ?? []).map((sel: any) => (
+              {selections.map((sel) => (
                 <div key={sel.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-stone-100">
-                  {sel.image_url ? (
-                    <img src={sel.image_url} alt={sel.name} className="w-full h-48 object-cover" />
-                  ) : (
-                    <div className="w-full h-48 bg-stone-50 flex items-center justify-center">
-                      <Package className="h-8 w-8 text-stone-300" />
-                    </div>
-                  )}
+                  <div className="w-full h-48 bg-stone-50 flex items-center justify-center">
+                    <Package className="h-8 w-8 text-stone-300" />
+                  </div>
                   <div className="p-4">
                     <h3 className="font-semibold text-stone-900">{sel.name}</h3>
                     {sel.category && (
@@ -254,7 +243,7 @@ export default function PublicPresentation() {
         )}
 
         {/* Timeline */}
-        {(milestones ?? []).length > 0 && (
+        {milestones.length > 0 && (
           <section>
             <div className="flex items-center gap-3 mb-8">
               <CheckSquare className="h-5 w-5 text-stone-400" />
@@ -268,7 +257,7 @@ export default function PublicPresentation() {
             <div className="relative">
               <div className="absolute left-4 top-0 bottom-0 w-px bg-stone-200" />
               <div className="space-y-4">
-                {(milestones ?? []).map((m: any) => (
+                {milestones.map((m) => (
                   <div key={m.id} className="relative pl-10">
                     <div className={`absolute left-2.5 top-2 h-3 w-3 rounded-full border-2 border-white ${m.completed ? "bg-stone-900" : "bg-stone-200"}`} />
                     <div className="bg-white rounded-xl border border-stone-100 p-4">
