@@ -305,10 +305,16 @@ export function useSuggestedCategories(projectId: number) {
   return useQuery<string[]>({
     queryKey: ["suggested-categories", projectId],
     queryFn: async () => {
+      const { data: boards, error: boardErr } = await supabase
+        .from("planning_boards")
+        .select("id")
+        .eq("project_id", projectId);
+      if (boardErr || !boards || boards.length === 0) return [];
+      const boardIds = boards.map((b) => b.id);
       const { data, error } = await supabase
         .from("canvas_elements")
         .select("content")
-        .eq("board_id", projectId);
+        .in("board_id", boardIds);
       if (error) return [];
       const cats = new Set<string>();
       for (const row of data ?? []) {
