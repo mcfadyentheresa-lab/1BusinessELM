@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useParams } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/use-auth";
@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle, Info, Package, Eye, Gauge, Sparkles, Paperclip, X, FileText } from "lucide-react";
+import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle, Info, Package, Eye, Gauge, Sparkles, Paperclip, X, FileText, ArrowLeft, ChevronRight } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -168,9 +168,11 @@ function calcAssemblyMaterialCost(materials: AssemblyMaterial[]): number {
 }
 
 export default function CostEstimator() {
-  const { id } = useParams<{ id: string }>();
+  const { projectId: projectIdParam, estimateId: estimateIdParam } = useParams<{ projectId: string; estimateId: string }>();
+  const [, navigate] = useLocation();
   const qc = useQueryClient();
-  const projectId = parseInt(id);
+  const projectId = parseInt(projectIdParam);
+  const estimateIdFromRoute = parseInt(estimateIdParam);
   const { user } = useAuth();
 
   const { data: project } = useQuery({
@@ -182,17 +184,17 @@ export default function CostEstimator() {
   });
 
   const { data: estimate, isLoading: estimateLoading } = useQuery({
-    queryKey: ["estimate", projectId],
+    queryKey: ["estimate", estimateIdFromRoute],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("project_estimates")
         .select("*, items:estimate_items(*)")
-        .eq("project_id", projectId)
-        .eq("status", "draft")
-        .order("created_at", { ascending: false })
-        .maybeSingle();
+        .eq("id", estimateIdFromRoute)
+        .single();
+      if (error) throw error;
       return data;
     },
+    enabled: !!estimateIdFromRoute,
   });
 
   const { data: categories } = useQuery({
@@ -237,7 +239,21 @@ export default function CostEstimator() {
     },
   });
 
-  const estimateId = estimate?.id ?? null;
+  const estimateId = estimateIdFromRoute;
+
+  useEffect(() => {
+    if (Number.isNaN(estimateIdFromRoute)) {
+      navigate(`/project/${projectId}/estimates`);
+    }
+  }, [estimateIdFromRoute, projectId, navigate]);
+
+  if (Number.isNaN(estimateIdFromRoute)) {
+    return (
+      <div className="p-6 max-w-5xl mx-auto">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   const { data: warnings = [], refetch: refetchWarnings } = useQuery<EstimateWarning[]>({
     queryKey: ["estimate-warnings", estimateId],
@@ -385,30 +401,15 @@ export default function CostEstimator() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      let newEstimateId = estimate?.id;
-      if (!newEstimateId) {
-        const { data, error } = await supabase.from("project_estimates").insert({
-          project_id: projectId,
-          name: "Main Estimate",
-          status: "draft",
-          markup_enabled: markupEnabled,
-          markup_percent: markupPct,
-          contingency_percent: contingencyPct,
-          management_fee_enabled: managementFeeEnabled,
-          management_fee_percent: managementFeePct,
-        }).select("id").single();
-        if (error) throw error;
-        newEstimateId = data.id;
-      } else {
-        await supabase.from("project_estimates").update({
-          markup_enabled: markupEnabled,
-          markup_percent: markupPct,
-          contingency_percent: contingencyPct,
-          management_fee_enabled: managementFeeEnabled,
-          management_fee_percent: managementFeePct,
-        }).eq("id", newEstimateId);
-        await supabase.from("estimate_items").delete().eq("estimate_id", newEstimateId);
-      }
+      const newEstimateId = estimateIdFromRoute;
+      await supabase.from("project_estimates").update({
+        markup_enabled: markupEnabled,
+        markup_percent: markupPct,
+        contingency_percent: contingencyPct,
+        management_fee_enabled: managementFeeEnabled,
+        management_fee_percent: managementFeePct,
+      }).eq("id", newEstimateId);
+      await supabase.from("estimate_items").delete().eq("estimate_id", newEstimateId);
       const realItems = items.filter(hasContent);
       if (realItems.length > 0) {
         const toInsert = realItems.map((item) => ({
@@ -428,7 +429,8 @@ export default function CostEstimator() {
         }));
         await supabase.from("estimate_items").insert(toInsert);
       }
-      qc.invalidateQueries({ queryKey: ["estimate", projectId] });
+      qc.invalidateQueries({ queryKey: ["estimate", estimateIdFromRoute] });
+      qc.invalidateQueries({ queryKey: ["project-estimates", projectId] });
       toast({ title: "Estimate saved" });
     } catch (e: any) {
       toast({ title: "Error saving", description: e.message, variant: "destructive" });
@@ -588,12 +590,18 @@ export default function CostEstimator() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
+      <button
+        onClick={() => navigate(`/project/${projectId}/estimates`)}
+        className="text-xs text-muted-foreground hover:text-foreground transition-colors mb-3 flex items-center gap-1"
+      >
+        <ArrowLeft className="h-3 w-3" /> All estimates
+      </button>
       <div className="flex items-start justify-between mb-7">
         <div>
           <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">{project?.name}{project?.code ? ` · ${project.code}` : ""}</p>
           <div className="flex items-center gap-2.5">
             <h1 className="text-3xl font-bold text-foreground leading-tight" style={{ fontFamily: "var(--font-serif)", letterSpacing: "-0.025em" }}>
-              Cost Estimator
+              {estimate?.name || "Cost Estimator"}
             </h1>
             {isLocked && <Badge variant="secondary" className="gap-1 shrink-0"><Lock className="h-3 w-3" /> Locked</Badge>}
           </div>

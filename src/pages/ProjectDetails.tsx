@@ -457,6 +457,21 @@ export default function ProjectDetails() {
   };
 
   const PRIORITY_ORDER: Record<string, number> = { critical: 0, attention: 1, watch: 2 };
+  const goToEstimate = async () => {
+    const { data } = await supabase
+      .from("project_estimates")
+      .select("id")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: true });
+    if (!data || data.length === 0) {
+      navigate(`/project/${projectId}/estimates`);
+    } else if (data.length === 1) {
+      navigate(`/project/${projectId}/estimate/${data[0].id}`);
+    } else {
+      navigate(`/project/${projectId}/estimates`);
+    }
+  };
+
   const activeAlerts = (watcherAlerts ?? [])
     .filter((a) => a.status === "new")
     .sort((a, b) => {
@@ -561,7 +576,7 @@ export default function ProjectDetails() {
                   variant="outline"
                   size="sm"
                   className="bg-white/10 border-white/20 text-white hover:bg-white/20 gap-1 backdrop-blur-sm"
-                  onClick={() => navigate(`/project/${projectId}/estimate`)}
+                  onClick={() => goToEstimate()}
                 >
                   <DollarSign className="h-3.5 w-3.5" /> Estimate
                 </Button>
@@ -767,7 +782,7 @@ export default function ProjectDetails() {
                 <Card>
                   <CardContent className="p-3 space-y-1">
                     <button
-                      onClick={() => navigate(`/project/${projectId}/estimate`)}
+                      onClick={() => goToEstimate()}
                       className="w-full flex items-center gap-2 px-2 py-2 rounded-md text-sm text-foreground hover:bg-muted transition-colors"
                     >
                       <DollarSign className="h-4 w-4 text-muted-foreground" />

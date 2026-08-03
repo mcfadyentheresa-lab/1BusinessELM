@@ -40,6 +40,7 @@ const CrewAndTrade = lazy(() => import("@/pages/CrewAndTrade"));
 const SupplierPrices = lazy(() => import("@/pages/SupplierPrices"));
 const MasterCalendar = lazy(() => import("@/pages/MasterCalendar"));
 const CostEstimator = lazy(() => import("@/pages/CostEstimator"));
+const EstimatesList = lazy(() => import("@/pages/EstimatesList"));
 const ProjectSettings = lazy(() => import("@/pages/ProjectSettings"));
 const Login = lazy(() => import("@/pages/Login"));
 const ForgotPassword = lazy(() => import("@/pages/ForgotPassword"));
@@ -132,6 +133,8 @@ function Router() {
                 <Route path="/profile" component={Profile} />
                 <Route path="/settings">{() => <RoleGuard component={AdminSettings} allowedRoles={["admin"]} />}</Route>
                 <Route path="/project/:id" component={ProjectDetails} />
+                <Route path="/project/:projectId/estimates" component={EstimatesList} />
+                <Route path="/project/:projectId/estimate/:estimateId" component={CostEstimator} />
                 <Route path="/project/:id/estimate" component={CostEstimator} />
                 <Route path="/project/:id/settings" component={ProjectSettings} />
                 <Route path="/colors">{() => <RoleGuard component={ColorPortfolio} allowedRoles={["admin", "crew"]} />}</Route>
