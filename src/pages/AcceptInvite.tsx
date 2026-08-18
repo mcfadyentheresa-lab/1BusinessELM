@@ -36,10 +36,7 @@ export default function AcceptInvite() {
   useEffect(() => {
     if (!params.token) return;
     supabase
-      .from("client_invites")
-      .select("first_name, last_name, email, role, status, project_id")
-      .eq("token", params.token)
-      .maybeSingle()
+      .rpc("get_invite_by_token", { p_token: params.token })
       .then(({ data, error }) => {
         if (error || !data) {
           toast({ title: "Invalid or expired invite link", variant: "destructive" });

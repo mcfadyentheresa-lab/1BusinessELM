@@ -2032,6 +2032,17 @@ export interface Database {
     };
     Views: {};
     Functions: {
+      get_invite_by_token: {
+        Args: { p_token: string };
+        Returns: {
+          first_name: string;
+          last_name: string;
+          email: string;
+          role: string;
+          status: string;
+          project_id: number | null;
+        } | null;
+      };
       get_public_presentation: {
         Args: { p_token: string };
         Returns: {
