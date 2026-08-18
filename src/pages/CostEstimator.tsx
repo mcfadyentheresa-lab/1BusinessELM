@@ -19,20 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { useUpload } from "@/hooks/use-upload";
 
-interface LineItem {
-  id?: number;
-  category_id: string;
-  custom_category: string;
-  room: string;
-  quantity: string;
-  unit_type: string;
-  unit_cost: string;
-  material_cost: string;
-  notes: string;
-  assembly_id: string | null;
-  material_from_assembly: boolean;
-  ai_suggested: boolean;
-}
+import { type LineItem, calcItemTotal, computeEstimateTotals } from "@/lib/estimate-math";
 
 interface EstimateWarning {
   id: number;
@@ -79,13 +66,6 @@ function hasContent(item: LineItem): boolean {
   if (item.room.trim()) return true;
   if (item.notes.trim()) return true;
   return false;
-}
-
-function calcItemTotal(item: LineItem): number {
-  const qty = parseFloat(item.quantity || "0");
-  const labor = parseFloat(item.unit_cost || "0") * qty;
-  const material = parseFloat(item.material_cost || "0") * qty;
-  return labor + material;
 }
 
 const UNIT_LABEL: Record<string, string> = {
@@ -317,13 +297,8 @@ export default function CostEstimator() {
     }
   }, [estimate]);
 
-  const subtotal = items.reduce((s, item) => s + calcItemTotal(item), 0);
-  const contingency = subtotal * (parseFloat(contingencyPct || "0") / 100);
-  const subtotalWithContingency = subtotal + contingency;
-  const markup = markupEnabled ? subtotalWithContingency * (parseFloat(markupPct || "0") / 100) : 0;
-  const subtotalWithMarkup = subtotalWithContingency + markup;
-  const managementFee = managementFeeEnabled ? subtotalWithMarkup * (parseFloat(managementFeePct || "0") / 100) : 0;
-  const total = subtotalWithMarkup + managementFee;
+  const { subtotal, contingency, markup, managementFee, total } =
+    computeEstimateTotals(items, { contingencyPct, markupEnabled, markupPct, managementFeeEnabled, managementFeePct });
 
   const itemLevelByItem = useMemo(() => {
     const map = new Map<number, EstimateWarning[]>();
