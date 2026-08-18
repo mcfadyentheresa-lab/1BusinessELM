@@ -1227,7 +1227,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     if (eventIdToDelete) {
       try {
         await deleteCalendarEvent({ id: eventIdToDelete, projectId });
-      } catch {}
+      } catch (error) {
+        console.error("Failed to delete linked calendar event for board", selectedBoardId, error);
+      }
     }
     setShowDeleteConfirm(false);
     setSelectedBoardId(null);
@@ -1283,7 +1285,11 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         await deleteBoard({ id, projectId });
         deleted++;
         if (eventIdToDelete) {
-          try { await deleteCalendarEvent({ id: eventIdToDelete, projectId }); } catch {}
+          try {
+            await deleteCalendarEvent({ id: eventIdToDelete, projectId });
+          } catch (error) {
+            console.error("Failed to delete linked calendar event for board", id, error);
+          }
         }
       } catch {
         failed++;

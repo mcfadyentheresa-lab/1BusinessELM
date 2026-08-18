@@ -12,6 +12,7 @@ import { Loader2 } from "lucide-react";
 import { ThemeProvider } from "next-themes";
 import { AppShell } from "@/components/layout/AppShell";
 import { useBodyPointerEventsCleanup } from "@/hooks/use-body-pointer-events-cleanup";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 function RoleGuard({ component: Component, allowedRoles }: { component: React.ComponentType; allowedRoles: string[] }) {
   const { user } = useAuth();
@@ -167,7 +168,9 @@ function App() {
             <GlobalEffects />
             <PresenceTracker />
             <Toaster />
-            <Router />
+            <ErrorBoundary>
+              <Router />
+            </ErrorBoundary>
           </TooltipProvider>
         </ViewAsProvider>
       </QueryClientProvider>
