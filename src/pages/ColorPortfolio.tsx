@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,15 @@ export default function ColorPortfolio() {
   const [search, setSearch] = useState("");
   const [family, setFamily] = useState("All");
   const [selectedColor, setSelectedColor] = useState<PaintColor | null>(null);
+
+  useEffect(() => {
+    if (!selectedColor) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelectedColor(null);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selectedColor]);
 
   const { data: colors, isLoading } = useQuery({
     queryKey: ["paint-colors"],
@@ -107,10 +116,14 @@ export default function ColorPortfolio() {
 
       {/* Color detail panel */}
       {selectedColor && (
+        // Click-outside dismiss backdrop; Escape key (handled above) is the keyboard-equivalent close action
+        // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
         <div
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm"
           onClick={() => setSelectedColor(null)}
         >
+          {/* Inner content: stops the backdrop's onClick from firing when clicking inside the panel */}
+          {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
           <div
             className="w-full max-w-sm rounded-t-2xl sm:rounded-2xl bg-background border border-border shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}

@@ -128,7 +128,14 @@ export function FurnitureSidePanel({
       </button>
 
       {collapsed ? (
-        <div className="flex-1 flex flex-col items-center justify-start pt-4 gap-2 cursor-pointer" onClick={() => setCollapsed(false)} role="button" aria-label="Expand furniture panel">
+        <div
+          className="flex-1 flex flex-col items-center justify-start pt-4 gap-2 cursor-pointer"
+          onClick={() => setCollapsed(false)}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCollapsed(false); } }}
+          role="button"
+          tabIndex={0}
+          aria-label="Expand furniture panel"
+        >
           <Armchair className="h-4 w-4 text-muted-foreground" aria-hidden />
           <span className="font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase" style={{ writingMode: "vertical-rl" }}>
             Furniture

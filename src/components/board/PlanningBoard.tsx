@@ -2389,6 +2389,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       if (e.key === "Escape") {
         if (connectMode) exitConnectMode();
         if (selectedConnectorId !== null) setSelectedConnectorId(null);
+        if (contextMenu) setContextMenu(null);
       }
       // Add-palette shortcuts — only fire when no input/textarea/contenteditable
       // is focused and there are no modifiers other than shift.
@@ -7740,8 +7741,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
               <div className="p-3 space-y-3">
                 <div>
                   <div className="text-xs font-medium text-muted-foreground mb-1.5">Upload</div>
-                  <div
-                    className={`border-2 border-dashed rounded-md p-4 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors ${
+                  <button
+                    type="button"
+                    className={`w-full border-2 border-dashed rounded-md p-4 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors ${
                       imagePopupDragOver
                         ? "border-[#2f4a3a] bg-[#2f4a3a]/5"
                         : "border-border hover:bg-muted/30"
@@ -7778,7 +7780,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                     <span className="text-xs text-muted-foreground text-center">
                       {imagePopupDragOver ? "Drop image here" : "Click or drop image / URL"}
                     </span>
-                  </div>
+                  </button>
                 </div>
                 <div>
                   <div className="text-xs font-medium text-muted-foreground mb-1.5">URL</div>
@@ -8728,6 +8730,8 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       {/* Context menu overlay */}
       {contextMenu && (
         <>
+          {/* Click-outside dismiss backdrop; Escape key (handled above) is the keyboard-equivalent close action */}
+          {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
           <div className="fixed inset-0 z-[9998]" onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
           <div
             className="fixed z-[9999] bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px]"
