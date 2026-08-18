@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Profile } from "@/shared/database.types";
 
-export interface AuthUser extends Profile {}
+export type AuthUser = Profile;
 
 interface AuthState {
   user: AuthUser | null;
@@ -47,13 +47,16 @@ export function useAuth(): AuthState {
     if (data) {
       setUser(data);
     } else if (session?.user) {
-      // Profile RLS blocked the read — build a minimal user from session metadata
+      // Profile RLS blocked the read — build a minimal user from session metadata.
+      // role must come from app_metadata (server-controlled via the
+      // sync_profile_role_to_app_metadata trigger), never user_metadata, which
+      // any authenticated user can overwrite via supabase.auth.updateUser().
       const meta = session.user.user_metadata ?? {};
       setUser({
         id: session.user.id,
         email: session.user.email ?? "",
         name: meta.name ?? session.user.email?.split("@")[0] ?? "",
-        role: meta.role ?? "crew",
+        role: session.user.app_metadata?.role ?? "crew",
         phone: null,
         avatar_url: null,
         created_at: session.user.created_at ?? new Date().toISOString(),
