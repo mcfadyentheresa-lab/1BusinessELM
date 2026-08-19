@@ -309,6 +309,19 @@ consistently applied wasn't verified.
     separate Bolt publish action updated it. Any future deploy-verification
     step should check for a fresh Bolt publish, not assume a GitHub push is
     sufficient or look for Railway build activity.
+  - **Correction (2026-08-19): Edge Functions are the one exception.**
+    Confirmed empirically: a fix pushed to `supabase/functions/estimate-auditor/index.ts`
+    (commit `afe64bc`) was live on the deployed function within about a
+    minute of the `git push` — well before any Bolt publish was triggered,
+    and confirmed by reading the function's code directly in the Supabase
+    dashboard's Edge Functions editor. So this project has two independent
+    deploy paths: **frontend** changes need an explicit Bolt publish (the
+    behavior documented above), but **Edge Function** changes under
+    `supabase/functions/` deploy automatically on push to `main` (almost
+    certainly a GitHub Actions workflow or Supabase's own GitHub
+    integration wired to this repo, not investigated further). Any future
+    Edge Function fix does NOT need a separate deploy step — verify it
+    directly against the live function instead of waiting on Bolt.
 
 ### Local dev experience
 `npm install && npm run dev` is the full path to a running app — genuinely
