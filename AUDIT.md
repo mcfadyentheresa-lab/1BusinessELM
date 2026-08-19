@@ -296,6 +296,19 @@ consistently applied wasn't verified.
     points to **Railway**, not Netlify. Worth double-checking which platform is
     actually serving `project.asterandspruceliving.ca` in production — it's
     possible both were tried at different points, or one is stale.
+  - **Resolved (2026-08-18)**: neither guess above was right. The Railway
+    project connected to this repo is stale/abandoned (deployment history
+    shows "REMOVED" entries, no active deployment) — the `railway-app[bot]`
+    commits above are historical, not evidence of the current pipeline.
+    Production is actually served by **Bolt.new's own publish flow**, which
+    is not git-push-triggered at all — pushing to `main` does not redeploy
+    the live site; a push to GitHub and a Bolt publish are two independent
+    actions. Confirmed empirically: a push to `main` sat live-unreflected on
+    the production site for 4+ minutes (cache-bypassed, verified via the
+    served bundle's content-hashed filename staying identical) until a
+    separate Bolt publish action updated it. Any future deploy-verification
+    step should check for a fresh Bolt publish, not assume a GitHub push is
+    sufficient or look for Railway build activity.
 
 ### Local dev experience
 `npm install && npm run dev` is the full path to a running app — genuinely
