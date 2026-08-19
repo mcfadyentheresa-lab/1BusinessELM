@@ -96,6 +96,22 @@ export default function ProjectDetails() {
     }
   };
 
+  const handleDeletePhoto = async (photo: Photo) => {
+    try {
+      const path = photo.url.split("/project-assets/")[1];
+      if (path) {
+        await supabase.storage.from("project-assets").remove([path]);
+      }
+      const { error } = await supabase.from("photos").delete().eq("id", photo.id);
+      if (error) throw error;
+      qc.invalidateQueries({ queryKey: ["photos", projectId] });
+      toast({ title: "Photo deleted" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Delete failed";
+      toast({ title: "Delete failed", description: message, variant: "destructive" });
+    }
+  };
+
   const handleDocumentUpload = async (file: File) => {
     setUploadingDocument(true);
     try {
@@ -1371,6 +1387,14 @@ export default function ProjectDetails() {
                       <div className="absolute top-1 right-1">
                         <Badge variant="secondary" className="text-[9px] px-1 py-0">Showcase</Badge>
                       </div>
+                    )}
+                    {isAdminOrCrew && (
+                      <button
+                        onClick={() => handleDeletePhoto(photo)}
+                        className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 h-6 w-6 rounded flex items-center justify-center bg-black/50 text-white hover:bg-destructive transition-all"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     )}
                   </div>
                 ))}
