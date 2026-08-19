@@ -67,6 +67,7 @@ export default function AcceptInvite() {
         data: {
           name: `${invite.first_name} ${invite.last_name}`,
           role,
+          invite_token: params.token,
         },
       },
     });
