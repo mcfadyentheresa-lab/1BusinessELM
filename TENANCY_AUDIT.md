@@ -537,11 +537,15 @@ regardless of when entitlements ship:**
    account still succeeds, confirming the legitimate path is unaffected.
 
 **Not urgent, just noted:**
-9. `tenant_settings`/`feature_flags`'s vestigial `tenant_key` column is
-   either the seed of the real entitlement mechanism (repurpose it once
-   `contractors` exists) or dead weight to clean up — worth a deliberate
-   decision rather than leaving it ambiguous once the real contractor
-   concept lands.
+9. `tenant_settings`/`feature_flags`'s vestigial `tenant_key` column —
+   **partially resolved (2026-08-19)** by the tenancy decision below: since
+   full isolation is the actual direction (just deferred), this is most
+   likely the seed of the real entitlement mechanism rather than dead
+   weight to clean up. Not a final technical decision, though — no schema
+   work has been done to confirm `tenant_key` is actually the right shape
+   to repurpose once `contractors` exists, only that "keep it" is now the
+   better default than "rip it out." Revisit for real once the structural
+   work in items 1-4 actually starts.
 
 ## Open question for you — **RESOLVED (2026-08-19)**
 
