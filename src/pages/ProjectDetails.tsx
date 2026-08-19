@@ -112,6 +112,22 @@ export default function ProjectDetails() {
     }
   };
 
+  const handleDeleteDocument = async (doc: Document) => {
+    try {
+      const path = doc.url.split("/project-assets/")[1];
+      if (path) {
+        await supabase.storage.from("project-assets").remove([path]);
+      }
+      const { error } = await supabase.from("documents").delete().eq("id", doc.id);
+      if (error) throw error;
+      qc.invalidateQueries({ queryKey: ["documents", projectId] });
+      toast({ title: "Document deleted" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Delete failed";
+      toast({ title: "Delete failed", description: message, variant: "destructive" });
+    }
+  };
+
   const handleDocumentUpload = async (file: File) => {
     setUploadingDocument(true);
     try {
@@ -1391,9 +1407,9 @@ export default function ProjectDetails() {
                     {isAdminOrCrew && (
                       <button
                         onClick={() => handleDeletePhoto(photo)}
-                        className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 h-6 w-6 rounded flex items-center justify-center bg-black/50 text-white hover:bg-destructive transition-all"
+                        className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 h-5 w-5 rounded-full flex items-center justify-center bg-black/40 backdrop-blur-sm text-white hover:bg-destructive transition-all"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-2.5 w-2.5" />
                       </button>
                     )}
                   </div>
@@ -1446,13 +1462,25 @@ export default function ProjectDetails() {
                     href={doc.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+                    className="group flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
                   >
                     <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
                     <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{doc.title}</p>
                       {doc.created_at && <p className="text-xs text-muted-foreground">{formatDate(doc.created_at)}</p>}
                     </div>
+                    {isAdminOrCrew && (
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleDeleteDocument(doc);
+                        }}
+                        className="shrink-0 opacity-0 group-hover:opacity-100 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                     <ExternalLink className="h-4 w-4 text-muted-foreground shrink-0" />
                   </a>
                 ))}
