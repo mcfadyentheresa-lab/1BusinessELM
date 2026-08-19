@@ -525,9 +525,16 @@ regardless of when entitlements ship:**
    `supabase.auth.signUp()` directly with the anon key, which is callable by
    anyone regardless of the app's own routing, so this wasn't merely
    defensive.
-8. **Fix `project_wishlist_items`'s INSERT policy** to also verify the
-   inserting user has legitimate access to the target `project_id` (mirror
-   the pattern already used correctly on `messages`' INSERT policy).
+8. ~~**Fix `project_wishlist_items`'s INSERT policy**~~ — **✅ FIXED**
+   (2026-08-19,
+   `supabase/migrations/20260819160000_fix_wishlist_insert_project_membership.sql`).
+   Mirrors the pattern already used correctly on `messages`' INSERT policy:
+   the caller must now either hold admin/crew role, or be the client
+   actually assigned to the target `project_id`. Verified live against the
+   real database in a rolled-back transaction: a fabricated non-owner
+   identity inserting against project 4 now fails with `42501: new row
+   violates row-level security policy`; the same insert as the real admin
+   account still succeeds, confirming the legitimate path is unaffected.
 
 **Not urgent, just noted:**
 9. `tenant_settings`/`feature_flags`'s vestigial `tenant_key` column is
