@@ -3,7 +3,8 @@ import { useParams, useLocation, useSearch } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/use-auth";
-import { useUpdateMilestone, useDeleteMilestone, useCreateSubMilestone, useUpdateSubMilestone } from "@/hooks/use-projects";
+import { useUpdateMilestone, useDeleteMilestone, useCreateSubMilestone, useUpdateSubMilestone, useUploadImage } from "@/hooks/use-projects";
+import { useUpload } from "@/hooks/use-upload";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,7 +24,7 @@ import {
   ChevronRight, Settings, DollarSign, Calendar, AlertTriangle,
   MapPin, Plus, Check, Loader2, ArrowUpRight, FileImage, Package,
   Wrench, Camera, ClipboardList, ExternalLink, Send, User, Pencil, Columns,
-  Trash2, X, Heart, Link as LinkIcon, BellRing,
+  Trash2, X, Heart, Link as LinkIcon, BellRing, Upload,
 } from "lucide-react";
 import PlanningBoard from "@/components/board/PlanningBoard";
 import type {
@@ -70,6 +71,51 @@ export default function ProjectDetails() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const projectId = parseInt(id);
+  const isAdminOrCrew = user?.role === "admin" || user?.role === "crew";
+
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const documentInputRef = useRef<HTMLInputElement>(null);
+  const uploadImage = useUploadImage();
+  const { uploadFile } = useUpload();
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
+
+  const handlePhotoUpload = async (file: File) => {
+    setUploadingPhoto(true);
+    try {
+      const { url } = await uploadImage.mutateAsync(file);
+      const { error } = await supabase.from("photos").insert({ project_id: projectId, url });
+      if (error) throw error;
+      qc.invalidateQueries({ queryKey: ["photos", projectId] });
+      toast({ title: "Photo added" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Upload failed";
+      toast({ title: "Upload failed", description: message, variant: "destructive" });
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handleDocumentUpload = async (file: File) => {
+    setUploadingDocument(true);
+    try {
+      const result = await uploadFile(file);
+      if (!result) throw new Error("Upload failed");
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "file";
+      const title = file.name.replace(/\.[^/.]+$/, "");
+      const { error } = await supabase
+        .from("documents")
+        .insert({ project_id: projectId, title, url: result.objectPath, type: ext });
+      if (error) throw error;
+      qc.invalidateQueries({ queryKey: ["documents", projectId] });
+      toast({ title: "Document added" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Upload failed";
+      toast({ title: "Upload failed", description: message, variant: "destructive" });
+    } finally {
+      setUploadingDocument(false);
+    }
+  };
 
   const params = new URLSearchParams(searchStr);
   const defaultTab = params.get("tab") ?? "overview";
@@ -1283,9 +1329,35 @@ export default function ProjectDetails() {
         {/* Files Tab */}
         <TabsContent value="files" className="p-6 max-w-5xl mx-auto w-full mt-0 space-y-6">
           <div>
-            <h2 className="text-base font-semibold text-foreground mb-3 flex items-center gap-2">
-              <FileImage className="h-4 w-4 text-muted-foreground" /> Photos
-            </h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+                <FileImage className="h-4 w-4 text-muted-foreground" /> Photos
+              </h2>
+              {isAdminOrCrew && (
+                <>
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handlePhotoUpload(file);
+                      e.target.value = "";
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={uploadingPhoto}
+                    onClick={() => photoInputRef.current?.click()}
+                  >
+                    {uploadingPhoto ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    Upload photo
+                  </Button>
+                </>
+              )}
+            </div>
             {(photos ?? []).length === 0 ? (
               <div className="text-center py-8 border border-dashed border-border rounded-xl">
                 <p className="text-sm text-muted-foreground">No photos yet</p>
@@ -1309,9 +1381,35 @@ export default function ProjectDetails() {
           <Separator />
 
           <div>
-            <h2 className="text-base font-semibold text-foreground mb-3 flex items-center gap-2">
-              <FileText className="h-4 w-4 text-muted-foreground" /> Documents
-            </h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+                <FileText className="h-4 w-4 text-muted-foreground" /> Documents
+              </h2>
+              {isAdminOrCrew && (
+                <>
+                  <input
+                    ref={documentInputRef}
+                    type="file"
+                    accept="application/pdf,image/jpeg,image/png,image/webp,image/gif,image/svg+xml"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleDocumentUpload(file);
+                      e.target.value = "";
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={uploadingDocument}
+                    onClick={() => documentInputRef.current?.click()}
+                  >
+                    {uploadingDocument ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    Upload document
+                  </Button>
+                </>
+              )}
+            </div>
             {(documents ?? []).length === 0 ? (
               <div className="text-center py-8 border border-dashed border-border rounded-xl">
                 <p className="text-sm text-muted-foreground">No documents yet</p>
