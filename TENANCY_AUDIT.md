@@ -17,6 +17,13 @@ callouts inline in §2 and the top of §5 for verification evidence. Everything
 else in this report (the tenancy findings proper) is unchanged and still
 describes the current state; those were explicitly out of scope for the fix.
 
+**Update (2026-08-19): the storage UPDATE/DELETE fix above needed two more
+rounds** — live verification against the real database (not just the local
+harness) turned up an orphaned trigger and a missing SELECT policy, both
+also blocking the fix. See the "Live verification update" callout inline in
+§2 for the full story; the fix is now confirmed working end-to-end against
+production.
+
 ---
 
 ## Verdict: **NOT TENANT-SAFE**
@@ -288,6 +295,65 @@ the brief asked about):
      verification as above (this fix is SQL-only, no application code
      touched).
 
+   **⚠️ Live verification update (2026-08-19)**: the fix above was correct
+   and necessary, but insufficient on its own — checking it against the
+   actual live database (not just the local PGlite harness) surfaced two
+   additional, previously-invisible blockers the harness could not have
+   caught:
+
+   1. **An orphaned trigger, `storage.objects.protect_objects_delete`**,
+      existed on the live table but appeared in no tracked migration — added
+      directly against the live database at some unknown point, outside
+      version control. It unconditionally raised on every `DELETE` unless a
+      custom session flag (`storage.allow_delete_query`) was set first, a
+      flag that appears nowhere in this app's code or migrations — meaning
+      nothing ever set it. Net effect: it silently blocked *every* delete
+      against `storage.objects`, for every role, including the legitimate
+      Storage API itself. Removed (`DROP TRIGGER protect_objects_delete ON
+      storage.objects;`), since the ownership-based RLS policy above is the
+      correct, working authorization layer, and this trigger only
+      duplicated it — badly.
+
+   2. **No `SELECT` policy existed on `storage.objects` at all** (only
+      INSERT/UPDATE/DELETE). This was the real root cause, independent of
+      the trigger: PostgreSQL's row-security model requires a SELECT-category
+      policy to establish which rows are *visible* before an UPDATE or
+      DELETE policy's own condition is even consulted — with zero SELECT
+      policies, no row is visible for deletion under RLS, for *any* role,
+      regardless of ownership or admin status. This is why the "correctly
+      blocked non-owner" result in the local-harness testing above wasn't
+      clean evidence the ownership logic alone was doing the work — a
+      missing SELECT policy blocks everyone equally, non-owner and rightful
+      owner alike, which is exactly what live testing against the real
+      admin account exposed. Fixed by adding a matching SELECT policy:
+      ```sql
+      CREATE POLICY "Owners and admins/crew can view assets"
+        ON storage.objects FOR SELECT TO authenticated
+        USING (bucket_id = 'project-assets' AND (owner = auth.uid() OR
+          public.get_my_role() = ANY (ARRAY['admin','crew'])));
+      ```
+
+   **Final live verification** (real production database, real session,
+   both fixes applied): a transactional test simulating the exact admin
+   identity that had been failing (`SET LOCAL ROLE authenticated; SET LOCAL
+   request.jwt.claims ...`) against the real file
+   (`photos/1787104023239_wx2r7i.png`) returned `deleted_count: 1` — then
+   rolled back, so nothing was actually touched by the test itself. The app
+   also shipped a real delete affordance for photos/documents in the Files
+   tab (previously missing for any role) so this can be exercised end-to-end
+   going forward, not just via direct SQL.
+
+   **Lesson for future RLS work on this schema**: the local PGlite harness
+   passed every one of the 5 assertions above and gave false confidence — it
+   could not catch either issue, because (a) it has no way to know about
+   schema drift applied directly to the live database outside migrations,
+   and (b) its hand-rolled setup script never needed to reproduce Postgres's
+   "a SELECT policy is required for UPDATE/DELETE row visibility" rule to
+   make its own assertions pass. Treat a local-harness "all green" as
+   necessary but not sufficient for storage/RLS changes on this project — a
+   live, real-database check is still required before calling a fix
+   complete.
+
 ---
 
 ## 3. Application-layer assumptions
@@ -446,14 +512,19 @@ regardless of when entitlements ship:**
    see §2/§4 for the migration and full verification evidence.
 6. ~~**Fix the storage bucket UPDATE/DELETE policies**~~ — **✅ FIXED**,
    see §2/§4 for the migration and full verification evidence.
-7. **Fix `handle_new_user()`** to not trust `raw_user_meta_data->>'role'` at
-   all — default every new signup to `'crew'` (or whatever the lowest
-   privilege is) and require an explicit admin action to grant elevated
-   roles, rather than trusting client-supplied signup metadata. Worth first
-   confirming whether self-signup is reachable in the current UI at all
-   (I did not find a public signup route, only invite-based onboarding) —
-   if it's genuinely unreachable, this is lower urgency but still worth
-   closing defensively.
+7. ~~**Fix `handle_new_user()`** to not trust `raw_user_meta_data->>'role'`~~
+   — **✅ FIXED** (2026-08-18,
+   `supabase/migrations/20260818140000_fix_handle_new_user_role_trust.sql`).
+   Confirmed live via a local trigger-reproduction harness before the fix
+   (a direct signup with self-declared `role: 'admin'` and no invite became
+   a real admin) and after (falls back to `'crew'`; a fabricated
+   `invite_token` grants nothing; expired/already-accepted tokens can't be
+   replayed; legitimate invited signups for both `crew` and `admin` still
+   work correctly). Self-signup turned out to be reachable after all — the
+   existing invite-acceptance flow (`AcceptInvite.tsx`) calls
+   `supabase.auth.signUp()` directly with the anon key, which is callable by
+   anyone regardless of the app's own routing, so this wasn't merely
+   defensive.
 8. **Fix `project_wishlist_items`'s INSERT policy** to also verify the
    inserting user has legitimate access to the target `project_id` (mirror
    the pattern already used correctly on `messages`' INSERT policy).
@@ -465,16 +536,32 @@ regardless of when entitlements ship:**
    decision rather than leaving it ambiguous once the real contractor
    concept lands.
 
-## Open question for you
+## Open question for you — **RESOLVED (2026-08-19)**
 
 Given fix #1-#4 above are genuinely substantial (a new table, scoping ~40
-tables' worth of RLS policies, updating 6 Edge Functions), it's worth
+tables' worth of RLS policies, updating 6 Edge Functions), it was worth
 confirming before any of that work starts: is the entitlement system meant to
 support **fully isolated contractor accounts** (what this report assumes, and
 what "Contractor A shouldn't see Contractor B's data" implies), or a lighter
 **single-company, per-user feature-gating** model (closer to what
 `feature_flags` already half-supports) where "contractor" really means
 "toggle which parts of the app one company's admins/crew/clients can reach,"
-not true data isolation between separate companies? The fix list above is
-sized for the former; the latter would be a much smaller, `feature_flags`-only
-change.
+not true data isolation between separate companies?
+
+**Decision**: the intent is genuinely full isolation, eventually — "contractor"
+here means white-labeling this app to other, separate renovation businesses
+(distinct from **trades/subcontractors** like electricians and plumbers, who
+are collaborators on the owner's own projects, not tenants needing isolation
+from them — that's an unrelated, much smaller feature question using the
+existing `subcontractors`/`suppliers` tables).
+
+**But this work is explicitly deferred, not scheduled** — the plan is to use
+E.L.M. with the owner's own business first, to find and fix real product
+issues before building for a hypothetical second tenant. This is a
+**gate, not a backlog item**: there is no safe partial state, so fix #1-#4
+above must be fully complete — not "in progress" — before onboarding the
+first external, white-label contractor. Any future work that touches the
+schema or RLS policies before then should keep this gate in mind (avoid
+decisions that would make the eventual `contractor_id` scoping harder to
+retrofit), but the structural work itself should not start until that
+onboarding is actually imminent.
