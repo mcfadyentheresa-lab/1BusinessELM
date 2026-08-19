@@ -149,30 +149,6 @@ export default function Login() {
               }
             </Button>
           </form>
-
-          {/* Divider */}
-          <div className="flex items-center gap-3 my-6">
-            <div className="flex-1 h-px bg-border" />
-            <span className="text-[10px] text-muted-foreground uppercase tracking-widest">or</span>
-            <div className="flex-1 h-px bg-border" />
-          </div>
-
-          {/* Demo access */}
-          <button
-            type="button"
-            onClick={() => {
-              setEmail("admin@elm.studio");
-              setPassword("demo1234");
-            }}
-            className="w-full h-11 rounded-md border border-border bg-muted/40 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors flex items-center justify-center gap-2"
-          >
-            <span className="text-xs uppercase tracking-[0.15em] font-medium" style={{ fontFamily: "var(--font-mono)" }}>
-              Fill demo credentials
-            </span>
-          </button>
-          <p className="text-center text-[11px] text-muted-foreground/60 mt-2">
-            admin@elm.studio · demo1234
-          </p>
         </div>
 
         {/* Footer */}
