@@ -597,7 +597,8 @@ export default function CostEstimator() {
           <div className="flex items-center gap-2.5">
             <button
               onClick={() => { setRenameValue(estimate?.name ?? ""); setRenameOpen(true); }}
-              className="group flex items-center gap-2 hover:opacity-80 transition-opacity"
+              disabled={isLocked}
+              className="group flex items-center gap-2 hover:opacity-80 transition-opacity disabled:hover:opacity-100 disabled:cursor-default"
             >
               <h1 className="text-3xl font-bold text-foreground leading-tight" style={{ fontFamily: "var(--font-serif)", letterSpacing: "-0.025em" }}>
                 {estimate?.name || "Cost Estimator"}

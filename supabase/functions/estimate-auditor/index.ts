@@ -277,12 +277,13 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // --- Before inserting: delete existing non-ignored warnings for this estimate ---
+    // --- Before inserting: delete existing non-ignored audit warnings for this estimate ---
     // Estimate-level warnings (estimate_id = estimateId, ignored = false)
     await db
       .from("estimate_warnings")
       .delete()
       .eq("estimate_id", estimateId)
+      .eq("source", "audit")
       .eq("ignored", false);
 
     // Item-level warnings for items in this estimate (ignored = false)
@@ -292,6 +293,7 @@ Deno.serve(async (req: Request) => {
         .from("estimate_warnings")
         .delete()
         .in("estimate_item_id", itemIds)
+        .eq("source", "audit")
         .eq("ignored", false);
     }
 

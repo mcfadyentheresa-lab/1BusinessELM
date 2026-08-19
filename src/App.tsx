@@ -134,9 +134,9 @@ function Router() {
                 <Route path="/profile" component={Profile} />
                 <Route path="/settings">{() => <RoleGuard component={AdminSettings} allowedRoles={["admin"]} />}</Route>
                 <Route path="/project/:id" component={ProjectDetails} />
-                <Route path="/project/:projectId/estimates" component={EstimatesList} />
-                <Route path="/project/:projectId/estimate/:estimateId" component={CostEstimator} />
-                <Route path="/project/:id/estimate" component={CostEstimator} />
+                <Route path="/project/:projectId/estimates">{() => <RoleGuard component={EstimatesList} allowedRoles={["admin"]} />}</Route>
+                <Route path="/project/:projectId/estimate/:estimateId">{() => <RoleGuard component={CostEstimator} allowedRoles={["admin"]} />}</Route>
+                <Route path="/project/:id/estimate">{() => <RoleGuard component={CostEstimator} allowedRoles={["admin"]} />}</Route>
                 <Route path="/project/:id/settings" component={ProjectSettings} />
                 <Route path="/colors">{() => <RoleGuard component={ColorPortfolio} allowedRoles={["admin", "crew"]} />}</Route>
                 <Route path="/timesheets">{() => <RoleGuard component={Timesheets} allowedRoles={["admin", "crew"]} />}</Route>

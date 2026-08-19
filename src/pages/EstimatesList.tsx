@@ -176,13 +176,15 @@ export default function EstimatesList() {
                     >
                       {est.status}
                     </Badge>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setRenameTarget({ id: est.id, name: est.name }); setRenameValue(est.name); }}
-                      className="text-muted-foreground/40 hover:text-foreground transition-colors"
-                      title="Rename"
-                    >
-                      <Pencil className="h-3 w-3" />
-                    </button>
+                    {est.status === "draft" && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setRenameTarget({ id: est.id, name: est.name }); setRenameValue(est.name); }}
+                        className="text-muted-foreground/40 hover:text-foreground transition-colors"
+                        title="Rename"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {est.created_at ? formatDate(est.created_at) : ""}
