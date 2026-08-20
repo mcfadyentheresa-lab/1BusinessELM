@@ -305,6 +305,86 @@ sized or started yet.
 
 ---
 
+## 7. Reliability findings (2026-08-19/20) — data integrity, not security
+
+Raised by the app's owner: "I want to work on the entire estimate piece so I
+trust it 100 percent." These are all confirmed by directly reading the code,
+not assumed — separate in kind from the security findings in §1-§5 above.
+None of these have been fixed yet.
+
+**7a — the Save flow can silently lose all of an estimate's line items.**
+`CostEstimator.tsx:408-446`, `handleSave` does three writes in sequence:
+update settings, delete all existing `estimate_items` for this estimate,
+then insert the new set. **None of the three check for an error** —
+confirmed by grepping every `await supabase.` call in the file: rename
+(`:453`), approve (`:468`), unlock (`:486`), and the warning-ignore mutation
+(`:570`) all correctly destructure and check `{ error }`. These three,
+inside the single most important write path in the whole feature, don't. If
+the delete succeeds but the insert fails for any reason — a malformed
+value, a dropped connection, anything — the code doesn't throw. It proceeds
+straight to `toast({ title: "Estimate saved" })` while the database now has
+**zero line items** for that estimate. Local React state isn't touched, so
+the admin sees success with their items still visibly on screen; the data
+loss is invisible until the estimate is next loaded, by anyone.
+
+**7b — even with 7a fixed, delete-then-reinsert isn't atomic.** It's two
+separate network round-trips, not one transaction. A dropped connection or
+closed tab between them leaves the estimate with no items — same end state
+as 7a, different trigger (an interruption rather than a caught-and-ignored
+error). The real fix for 7a and 7b together is the same one used for
+approve/unlock in §1: a single `SECURITY DEFINER` database function that
+does the update/delete/insert in one transaction, so a failure anywhere
+rolls back the whole save and a real error reaches the UI.
+
+**7c — zero input validation on quantity, unit cost, or material cost.**
+`CostEstimator.tsx:791-856`: all three are plain `<Input>` (text), no
+`type="number"`, no `min`, no pattern — nothing stops blank, negative, or
+non-numeric text from being typed in.
+
+**7d — that gap has a silent, ugly consequence: one bad character zeroes
+the whole displayed total.** `formatCurrency` (`src/lib/utils.ts:8-12`)
+converts `NaN` to `"$0.00"` instead of surfacing an error. The totals chain
+in `estimate-math.ts` (`subtotal → contingency → markup → management fee →
+total`) has no guard against `NaN`, and `NaN` poisons every arithmetic
+operation it touches via `Array.reduce`. Result: typing anything
+non-numeric into a single line item's quantity or cost field makes the
+**entire estimate's total silently render as $0.00** — no error, no
+highlighted field, nothing indicating which line item caused it. A
+five-figure estimate could display "$0.00" with zero warning if this is
+missed, right before being approved and snapshotted as the official
+record.
+
+**7e — `estimate_items.labor_cost` is a dead write-only column that
+inherits the same bug.** `CostEstimator.tsx:431`:
+`labor_cost: String(parseFloat(item.unit_cost) * parseFloat(item.quantity))`
+is written on every save. Grepped every reference to `labor_cost` across
+`src/` and `supabase/functions/` — it is written here and nowhere else;
+nothing reads it back for totals, warnings, or reporting. Low practical
+impact today (the real math is always recomputed live from `unit_cost`/
+`quantity`/`material_cost`), but it can silently store the literal string
+`"NaN"` under the same conditions as 7d, and it's confusing dead weight
+either way — worth either wiring it up to something real or removing it.
+
+**7f — zero automated test coverage for any of the above.** `find src
+-iname "*.test.ts*"` turns up exactly two files: `use-auth.test.ts` and
+`estimate-math.test.ts`. The latter only covers the pure math functions
+(already solid, see §6) — none of the actual persistence logic (Save,
+Approve, Unlock) or the RLS enforcement (verified live by hand in §1, not
+by an automated test) has any regression protection. A future change could
+silently reintroduce 7a-7e, or break the approve/unlock lock, with nothing
+catching it.
+
+**On making this its own product**: also raised by the app's owner —
+whether the estimate piece should eventually become a standalone/white-label
+product or a pluggable module rather than an ELM page. Recommendation:
+sequence reliability before extraction. 7a/7d in particular are exactly the
+kind of bug you don't want to carry into something other businesses depend
+on — cheaper to fix once now, while this is low-stakes and internal, than
+mid-extraction later. Not sized or started; a real architectural
+conversation for once the core is solid.
+
+---
+
 ## Prioritized fix list
 
 **Worth fixing regardless of any product decision (small, self-contained):**
@@ -359,3 +439,32 @@ sized or started yet.
    locked total/summary) before reaching for an RLS policy — that product
    decision should come before the implementation, same as the locked-
    estimate work did.
+
+**Reliability (§7) — the app's owner wants to work through this whole group
+before trusting the estimate piece completely. Starting with #9.**
+9. **[NEXT UP] Fix the Save flow (§7a/§7b)** — the highest-stakes item on
+   this whole list. Add real error checking to `handleSave`'s three writes
+   at minimum; the correct full fix is a single `SECURITY DEFINER` database
+   function (same pattern as `approve_estimate`/`unlock_estimate`) that does
+   the settings-update/delete/insert in one transaction, so a failure
+   anywhere rolls back the whole save instead of silently leaving an
+   estimate with zero line items.
+10. **Add input validation to quantity/unit cost/material cost** (§7c) —
+    at minimum reject non-numeric and negative values before they can be
+    typed in or saved.
+11. **Stop `NaN` from silently rendering as `$0.00`** (§7d) — either guard
+    the totals chain in `estimate-math.ts` so a bad value surfaces as a
+    visible warning on the specific line item, or (better, and this only
+    fully works once #10 exists) make the bad input impossible to save in
+    the first place.
+12. **Fix or remove the dead `labor_cost` column** (§7e) — low priority in
+    isolation, cheap to fix alongside #9 since it's the same code path.
+13. **Build real test coverage for the persistence/approval logic** (§7f)
+    — Save, Approve, Unlock, and the RLS lock enforcement currently have no
+    regression protection beyond the one-time manual verification already
+    done. Given the PGlite-based RLS harness pattern already established
+    this session for the storage/tenancy work, the same approach applies
+    here.
+14. **Revisit "make it its own product" once 9-13 are done** — not sized,
+    not started; see the note at the end of §7 for the reasoning on
+    sequencing this after reliability, not before.
