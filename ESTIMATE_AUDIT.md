@@ -266,7 +266,23 @@ clear redirect or access-denied message. Not a security hole — the data is
 correctly hidden — but worth the same `RoleGuard` treatment the other
 admin-only pages already get, purely for a cleaner failure mode.
 
----
+**✅ Failure mode fixed (2026-08-19)** as part of building the approval
+flow in §1 — the estimate routes now have `RoleGuard(allowedRoles=["admin"])`,
+so a crew/client user is cleanly redirected with a toast instead of seeing
+a blank page. Confirmed live by the app's owner using the "Preview as:
+Client" toggle.
+
+**Open product question raised by the app's owner (2026-08-19), not yet
+answered**: is client-side invisibility actually correct here, or is it
+its own gap? The app markets sending an approved estimate to a client
+(`sent_at` column, `LandingPage.tsx`'s "client presentations" framing,
+now-real "locked estimates") — but nothing in this schema lets a `client`
+role see *any* estimate, even their own, once approved and sent. If clients
+are meant to actually view what they approved, that's a real, separate
+piece of work (almost certainly its own read-only RLS policy scoped to
+"this client's own project's approved estimate," not simply opening up
+admin-level estimate access) — tracked as fix list item 7 below, not
+sized or started yet.
 
 ## 6. What's already solid (confirmed, not just assumed)
 
@@ -333,3 +349,13 @@ admin-only pages already get, purely for a cleaner failure mode.
    by, and gated the same as, `TENANCY_AUDIT.md` item 4 — no separate
    action needed, just noting these three functions by name for whenever
    that structural work actually starts.
+8. **Clients can't see their own estimate at all, not even after it's
+   approved and sent** — raised by the app's owner (2026-08-19) while
+   testing the new approval flow via the "Preview as: Client" toggle. See
+   the "Open product question" note under §5 for the full framing. Explicitly
+   deferred — "add to the list to address when it makes sense," not sized
+   or scoped yet. When it's picked up, the real question to answer first is
+   *what* a client should see (the full line-item breakdown, or just the
+   locked total/summary) before reaching for an RLS policy — that product
+   decision should come before the implementation, same as the locked-
+   estimate work did.
