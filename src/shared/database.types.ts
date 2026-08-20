@@ -2032,6 +2032,14 @@ export interface Database {
     };
     Views: {};
     Functions: {
+      approve_estimate: {
+        Args: { p_estimate_id: number };
+        Returns: void;
+      };
+      unlock_estimate: {
+        Args: { p_estimate_id: number; p_reason: string };
+        Returns: void;
+      };
       get_invite_by_token: {
         Args: { p_token: string };
         Returns: {

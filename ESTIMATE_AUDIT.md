@@ -96,6 +96,51 @@ missing enforcement above is built) edited, the audit trail you're already
 marketing doesn't actually hold up. This is worth closing before "locked
 estimates" is something you'd rely on in a dispute with a client.
 
+**✅ BUILT (2026-08-19)** — all three findings above are now resolved for
+real, not just noted. Design discussed and agreed with the app's owner
+first: approving locks an estimate; an admin can unlock it to make
+corrections rather than being forced into a new estimate for every change,
+but every approval and every unlock is logged to a new, genuinely
+append-only `estimate_status_history` table (no `UPDATE`/`DELETE` policy
+exists on it at all — same intentional pattern as `material_price_history`
+in §6). Approval also snapshots the full estimate + line items as they
+stood at that moment, so "what did the client actually see and agree to"
+stays answerable even after a later unlock-and-change.
+
+- **1a resolved**: `approve_estimate(p_estimate_id)` and
+  `unlock_estimate(p_estimate_id, p_reason)` RPCs
+  (`supabase/migrations/20260819170000_estimate_approval_lock_with_audit_trail.sql`)
+  are the only two ways `status` can change now. A real "Approve"/"Unlock"
+  button pair exists in `CostEstimator.tsx`, and a history section on the
+  page itself lists every approval/unlock with who, when, and (for
+  unlocks) the required reason — the audit trail is visible in the app,
+  not just sitting in the database.
+- **1b resolved**: both rename triggers found in this finding are now
+  gated. `CostEstimator.tsx`'s rename button is `disabled={isLocked}`;
+  `EstimatesList.tsx`'s rename pencil is only rendered at all when
+  `est.status === "draft"`.
+- **1c resolved — this is the one that actually matters most.** The
+  `project_estimates` UPDATE policy and all three
+  `estimate_items` write policies (INSERT/UPDATE/DELETE) now additionally
+  require `status = 'draft'` (via a join back to the parent estimate for
+  `estimate_items`). This was verified live against the real production
+  database, not just read from the migration: a direct `UPDATE ... SET
+  name = 'HACKED'` against an approved estimate is silently filtered by
+  RLS (row unchanged), and a direct `INSERT` into `estimate_items` for an
+  approved estimate raises a genuine `42501` RLS violation — confirmed in
+  a rolled-back transaction, so nothing in production was actually
+  touched by the verification itself. The two RPCs above are
+  `SECURITY DEFINER` specifically so they remain the sole exception to
+  this new restriction. A CHECK constraint (`status IN ('draft',
+  'approved')`) was also added, closing §4 below at the same time.
+  Testing this also caught and fixed a real bug before it ever shipped:
+  the first version's admin check (`get_my_role() <> 'admin'`) silently
+  passed for a user with no `profiles` row at all, because `NULL <>
+  'admin'` evaluates to `NULL` in SQL, which PL/pgSQL's `IF` treats as
+  false. Fixed to `IS DISTINCT FROM`, which handles `NULL` correctly, and
+  reconfirmed live that a fabricated non-admin identity is now correctly
+  rejected.
+
 ---
 
 ## 2. `estimate-auditor` silently deletes client-review warnings — confirmed bug
@@ -179,25 +224,22 @@ revoking `PUBLIC` execute on `get_my_role()`).
 
 ---
 
-## 4. Schema gaps around `project_estimates.status`
+## 4. Schema gaps around `project_estimates.status` — ✅ RESOLVED (2026-08-19)
 
 `supabase/migrations/20260526173102_05_cost_estimator.sql:186`:
 ```sql
 status text NOT NULL DEFAULT 'draft',
 ```
 
-No `CHECK` constraint restricts this to a known set of values — unlike
+No `CHECK` constraint restricted this to a known set of values — unlike
 other status-bearing tables in this schema, e.g. `watcher_alerts.status`
 which has an explicit `CHECK (status IN (...))`
-(`20260720003809_create_watcher_alerts.sql`). Currently dormant, since
-nothing writes to `status` at all (§1a) — but the moment an
-Approve/Send flow is built, a stray typo or bug in that new code could set
-`status` to a value that doesn't match what the UI checks for
-(`EstimatesList.tsx:174` compares against the literal string `"approved"`),
-silently breaking the badge and the `isLocked` gate without any error.
-Worth adding alongside whatever builds the actual approve/send functionality
-— not urgent in isolation since there's no live write path to worry about
-yet.
+(`20260720003809_create_watcher_alerts.sql`). Closed as part of building
+the real approve/unlock flow in §1:
+`ALTER TABLE project_estimates ADD CONSTRAINT project_estimates_status_check
+CHECK (status IN ('draft', 'approved'));`. Verified safe to add before
+applying it — queried the live table first and confirmed every existing
+row was already `'draft'`, so no data migration was needed.
 
 ---
 
@@ -277,19 +319,11 @@ admin-only pages already get, purely for a cleaner failure mode.
    so this is additive protection with no dead links introduced for other
    roles.
 
-**Needs a product decision first — is "locked estimates" something you
-actually want to ship, or should the landing-page copy change instead?**
-4. If yes: build the actual Approve/Send flow (sets `status`, `approved_at`,
-   `approved_by`, `sent_at`), add a `CHECK` constraint on `status`
-   (§4), and add real server-side enforcement (RLS predicate or trigger
-   blocking writes to `project_estimates`/`estimate_items` once
-   `status <> 'draft'`) so the lock isn't purely a client-side courtesy
-   (§1c). This is real feature work, not a quick fix — sizing it is a
-   separate conversation once you decide you want it.
-5. If the feature isn't a near-term priority: consider softening the
-   landing-page copy ("locked estimates," "approval locks with audit
-   trail") until it's actually true, so it doesn't set an expectation the
-   product doesn't currently meet.
+4. ~~If yes: build the actual Approve/Send flow~~ — **✅ BUILT (2026-08-19)**,
+   see the resolution note under §1 and the CHECK constraint note under §4
+   for the full detail and live verification evidence. The landing page's
+   "locked estimates" / "approval locks with audit trail" copy is now
+   actually true.
 
 **Not urgent, just noted:**
 6. Restrict Edge Function CORS from `*` to the app's own origin, for

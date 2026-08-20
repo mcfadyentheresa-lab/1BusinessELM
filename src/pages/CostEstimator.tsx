@@ -6,14 +6,15 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
-import { formatCurrency } from "@/lib/utils";
-import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle, Info, Package, Eye, Gauge, Sparkles, Paperclip, X, FileText, ArrowLeft, ChevronRight, Pencil } from "lucide-react";
+import { formatCurrency, formatDate } from "@/lib/utils";
+import { Plus, Trash2, Lock, Loader2, Save, ShieldCheck, AlertTriangle, Info, Package, Eye, Gauge, Sparkles, Paperclip, X, FileText, ArrowLeft, ChevronRight, Pencil, History } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -30,6 +31,14 @@ interface EstimateWarning {
   percent_diff: string | null;
   ignored: boolean;
   source: string;
+}
+
+interface EstimateStatusHistoryEntry {
+  id: number;
+  action: "approved" | "unlocked";
+  reason: string | null;
+  performed_at: string;
+  profiles: { name: string } | null;
 }
 
 interface AuditResponse {
@@ -218,6 +227,26 @@ export default function CostEstimator() {
       })) as EstimateAssembly[];
     },
   });
+
+  const { data: statusHistory = [] } = useQuery<EstimateStatusHistoryEntry[]>({
+    queryKey: ["estimate-status-history", estimateIdFromRoute],
+    queryFn: async () => {
+      if (!estimateIdFromRoute) return [];
+      const { data, error } = await supabase
+        .from("estimate_status_history")
+        .select("id, action, reason, performed_at, profiles(name)")
+        .eq("estimate_id", estimateIdFromRoute)
+        .order("performed_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as unknown as EstimateStatusHistoryEntry[];
+    },
+    enabled: !!estimateIdFromRoute,
+  });
+
+  const [approving, setApproving] = useState(false);
+  const [unlockOpen, setUnlockOpen] = useState(false);
+  const [unlockReason, setUnlockReason] = useState("");
+  const [unlocking, setUnlocking] = useState(false);
 
   const estimateId = estimateIdFromRoute;
 
@@ -433,6 +462,42 @@ export default function CostEstimator() {
     setRenaming(false);
   };
 
+  const handleApprove = async () => {
+    setApproving(true);
+    try {
+      const { error } = await supabase.rpc("approve_estimate", { p_estimate_id: estimateIdFromRoute });
+      if (error) throw error;
+      qc.invalidateQueries({ queryKey: ["estimate", estimateIdFromRoute] });
+      qc.invalidateQueries({ queryKey: ["project-estimates", projectId] });
+      qc.invalidateQueries({ queryKey: ["estimate-status-history", estimateId] });
+      toast({ title: "Estimate approved and locked" });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Approve failed";
+      toast({ title: "Approve failed", description: message, variant: "destructive" });
+    }
+    setApproving(false);
+  };
+
+  const handleUnlock = async () => {
+    const reason = unlockReason.trim();
+    if (!reason) return;
+    setUnlocking(true);
+    try {
+      const { error } = await supabase.rpc("unlock_estimate", { p_estimate_id: estimateIdFromRoute, p_reason: reason });
+      if (error) throw error;
+      qc.invalidateQueries({ queryKey: ["estimate", estimateIdFromRoute] });
+      qc.invalidateQueries({ queryKey: ["project-estimates", projectId] });
+      qc.invalidateQueries({ queryKey: ["estimate-status-history", estimateId] });
+      setUnlockOpen(false);
+      setUnlockReason("");
+      toast({ title: "Estimate unlocked" });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Unlock failed";
+      toast({ title: "Unlock failed", description: message, variant: "destructive" });
+    }
+    setUnlocking(false);
+  };
+
   const handleAudit = async () => {
     if (!estimateId) return;
     setAuditing(true);
@@ -515,7 +580,7 @@ export default function CostEstimator() {
   });
 
   const isLocked = estimate?.status !== "draft" && estimate != null;
-  const busy = saving || auditing || reviewing || generating;
+  const busy = saving || auditing || reviewing || generating || approving || unlocking;
 
   const handleGenerateDraft = async () => {
     setGenerating(true);
@@ -641,8 +706,44 @@ export default function CostEstimator() {
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save estimate
           </Button>
+          {isLocked ? (
+            <Button onClick={() => setUnlockOpen(true)} disabled={busy} variant="outline" className="gap-2">
+              {unlocking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
+              Unlock
+            </Button>
+          ) : (
+            <Button onClick={handleApprove} disabled={!estimateId || busy} variant="outline" className="gap-2">
+              {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+              Approve
+            </Button>
+          )}
         </div>
       </div>
+
+      {statusHistory.length > 0 && (
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <History className="h-4 w-4 text-muted-foreground" /> Approval history
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {statusHistory.map((entry) => (
+              <div key={entry.id} className="flex items-start gap-2 text-xs">
+                <Badge variant={entry.action === "approved" ? "success" : "secondary"} className="shrink-0 mt-0.5">
+                  {entry.action === "approved" ? "Approved" : "Unlocked"}
+                </Badge>
+                <div className="flex-1 min-w-0">
+                  <span className="text-muted-foreground">
+                    {formatDate(entry.performed_at)} by {entry.profiles?.name ?? "Admin"}
+                  </span>
+                  {entry.reason && <p className="text-foreground mt-0.5">{entry.reason}</p>}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Line items */}
       <Card className="mb-4">
@@ -1111,6 +1212,34 @@ export default function CostEstimator() {
             <Button onClick={handleRename} disabled={renaming || !renameValue.trim()}>
               {renaming && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
               Save name
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={unlockOpen} onOpenChange={(o) => { setUnlockOpen(o); if (!o) setUnlockReason(""); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Unlock estimate</DialogTitle>
+            <DialogDescription>
+              This estimate is approved and locked. Unlocking it lets you make changes, but is logged in the
+              approval history with the reason below — it can't be undone quietly.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 mt-1">
+            <Label htmlFor="unlock-reason">Reason for unlocking</Label>
+            <Textarea
+              id="unlock-reason"
+              value={unlockReason}
+              onChange={(e) => setUnlockReason(e.target.value)}
+              placeholder="e.g. Client requested a change to the tile allowance"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setUnlockOpen(false)}>Cancel</Button>
+            <Button onClick={handleUnlock} disabled={unlocking || !unlockReason.trim()}>
+              {unlocking && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              Unlock estimate
             </Button>
           </DialogFooter>
         </DialogContent>
