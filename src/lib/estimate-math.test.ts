@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcItemTotal, computeEstimateTotals, type LineItem } from "./estimate-math";
+import { calcItemTotal, computeEstimateTotals, isValidLineItemNumber, lineItemHasInvalidNumbers, type LineItem } from "./estimate-math";
 
 function item(overrides: Partial<LineItem> = {}): LineItem {
   return {
@@ -28,6 +28,43 @@ describe("calcItemTotal", () => {
   it("treats missing/blank numeric fields as zero", () => {
     const result = calcItemTotal(item({ quantity: "", unit_cost: "", material_cost: "" }));
     expect(result).toBe(0);
+  });
+
+  it("treats a non-numeric quantity as zero instead of NaN", () => {
+    // Regression: a bad value used to make labor/material NaN, and NaN
+    // poisons Array.reduce for every other item's total too - a single
+    // stray "." could silently zero out the entire estimate's total.
+    const result = calcItemTotal(item({ quantity: ".", unit_cost: "5", material_cost: "2" }));
+    expect(result).toBe(0);
+    expect(Number.isNaN(result)).toBe(false);
+  });
+});
+
+describe("lineItemHasInvalidNumbers", () => {
+  it("flags a bare '.' as invalid", () => {
+    expect(lineItemHasInvalidNumbers(item({ quantity: "." }))).toBe(true);
+  });
+
+  it("does not flag valid decimals or empty strings", () => {
+    expect(lineItemHasInvalidNumbers(item({ quantity: "12.5", unit_cost: "0", material_cost: "" }))).toBe(false);
+  });
+
+  it("does not flag a fully valid item", () => {
+    expect(lineItemHasInvalidNumbers(item({ quantity: "10", unit_cost: "5", material_cost: "2" }))).toBe(false);
+  });
+});
+
+describe("isValidLineItemNumber", () => {
+  it("accepts empty string, integers, and decimals", () => {
+    expect(isValidLineItemNumber("")).toBe(true);
+    expect(isValidLineItemNumber("0")).toBe(true);
+    expect(isValidLineItemNumber("12.5")).toBe(true);
+  });
+
+  it("rejects negatives, garbage, and a bare dot", () => {
+    expect(isValidLineItemNumber("-5")).toBe(false);
+    expect(isValidLineItemNumber("abc")).toBe(false);
+    expect(isValidLineItemNumber(".")).toBe(false);
   });
 });
 
@@ -90,5 +127,26 @@ describe("computeEstimateTotals", () => {
 
     expect(result.managementFee).toBeCloseTo(49.5, 6);
     expect(result.total).toBeCloseTo(544.5, 6);
+  });
+
+  it("excludes one invalid item's numbers rather than NaN-ing the whole total", () => {
+    // Regression for §7d: one bad line item used to poison the entire
+    // estimate's total via NaN, silently rendering as $0.00.
+    const withOneBadItem: LineItem[] = [
+      item({ quantity: "10", unit_type: "sq_ft", unit_cost: "20", material_cost: "5" }),
+      item({ quantity: ".", unit_type: "hour", unit_cost: "100", material_cost: "0" }),
+    ];
+
+    const result = computeEstimateTotals(withOneBadItem, {
+      contingencyPct: "0",
+      markupEnabled: false,
+      markupPct: "0",
+      managementFeeEnabled: false,
+      managementFeePct: "0",
+    });
+
+    expect(result.subtotal).toBe(250);
+    expect(Number.isNaN(result.total)).toBe(false);
+    expect(result.total).toBe(250);
   });
 });

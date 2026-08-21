@@ -20,7 +20,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { useUpload } from "@/hooks/use-upload";
 
-import { type LineItem, calcItemTotal, computeEstimateTotals } from "@/lib/estimate-math";
+import { type LineItem, calcItemTotal, computeEstimateTotals, lineItemHasInvalidNumbers } from "@/lib/estimate-math";
 
 interface EstimateWarning {
   id: number;
@@ -341,6 +341,8 @@ export default function CostEstimator() {
 
   const { subtotal, contingency, markup, managementFee, total } =
     computeEstimateTotals(items, { contingencyPct, markupEnabled, markupPct, managementFeeEnabled, managementFeePct });
+
+  const hasInvalidItems = items.some(lineItemHasInvalidNumbers);
 
   const itemLevelByItem = useMemo(() => {
     const map = new Map<number, EstimateWarning[]>();
@@ -770,9 +772,10 @@ export default function CostEstimator() {
               const ignoredClientItemWarnings = itemWarnings.filter((w) => w.ignored && w.source === "client_review");
               const marketRate = item.category_id ? findMarketRate(marketRates, item.category_id, item.unit_type) : null;
               const rowAssemblies = item.category_id ? assemblies.filter((a) => String(a.category_id) === item.category_id) : [];
+              const numbersInvalid = lineItemHasInvalidNumbers(item);
               return (
                 <div key={idx}>
-                  <div className="grid grid-cols-12 gap-2 items-start p-3 rounded-lg bg-muted/30 border border-border/60">
+                  <div className={`grid grid-cols-12 gap-2 items-start p-3 rounded-lg bg-muted/30 border ${numbersInvalid ? "border-destructive/60" : "border-border/60"}`}>
                     <div className="col-span-12 sm:col-span-3">
                       <Select
                         value={item.category_id}
@@ -905,7 +908,17 @@ export default function CostEstimator() {
                       )}
                     </div>
                     <div className="col-span-3 sm:col-span-1 flex items-center justify-between">
-                      <span className="text-xs font-medium tabular-nums" style={{ fontFamily: "var(--font-mono)" }}>
+                      <span className="text-xs font-medium tabular-nums flex items-center gap-1" style={{ fontFamily: "var(--font-mono)" }}>
+                        {numbersInvalid && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <AlertTriangle className="h-3 w-3 text-destructive shrink-0" />
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-[220px] text-xs leading-snug">
+                              Invalid quantity, unit cost, or material cost — excluded from the total until fixed.
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
                         {formatCurrency(calcItemTotal(item))}
                       </span>
                       {!isLocked && (
@@ -1127,6 +1140,12 @@ export default function CostEstimator() {
       )}
 
       {/* Totals panel */}
+      {hasInvalidItems && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          One or more line items have an invalid quantity, unit cost, or material cost — flagged in red below and excluded from the total until fixed.
+        </div>
+      )}
       <div className="rounded-xl border border-border bg-card overflow-hidden">
         {/* Hero total */}
         <div className="p-6 border-b border-border bg-muted/20">

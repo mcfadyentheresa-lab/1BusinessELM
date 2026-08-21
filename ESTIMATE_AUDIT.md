@@ -500,11 +500,46 @@ before trusting the estimate piece completely. Starting with #9.**
     rejected). Client-side sanitizer changes checked lint/tsc-clean against
     the pre-change baseline (52 problems before and after — no new issues
     introduced).
-11. **Stop `NaN` from silently rendering as `$0.00`** (§7d) — either guard
-    the totals chain in `estimate-math.ts` so a bad value surfaces as a
-    visible warning on the specific line item, or (better, and this only
-    fully works once #10 exists) make the bad input impossible to save in
-    the first place.
+11. ~~**Stop `NaN` from silently rendering as `$0.00`**~~ (§7d) —
+    **✅ FIXED (2026-08-21)**. `calcItemTotal` (`estimate-math.ts`) no longer
+    does a raw `parseFloat` on quantity/unit_cost/material_cost — a new
+    `safeNumber()` helper treats anything that isn't a valid non-negative
+    decimal (or empty string) as `0` for that item's contribution, instead
+    of letting `NaN` through. That was the actual bug: `NaN` poisons
+    `Array.reduce`, so one bad line item zeroed the *entire* estimate's
+    total, not just its own row — `computeEstimateTotals` needed no other
+    change since it was always built on `calcItemTotal`.
+
+    Per the audit's own framing, did both halves rather than picking one:
+    with #10 already making bad input essentially impossible to save
+    (§7c), the only way to reach this state at all now is a transient
+    editing value the sanitizer still allows through as text but that
+    isn't a complete number yet — a bare `"."` typed into an empty field is
+    the one case (`sanitizeNumericInput` allows a lone `.` so the field
+    doesn't reject the keystroke that starts `"0.5"`). So on top of the
+    NaN-safe math, added the visible-warning half too: a new
+    `lineItemHasInvalidNumbers()` export flags any item with an invalid
+    quantity/unit_cost/material_cost, `CostEstimator.tsx` uses it to give
+    that row's card a destructive-red border and a tooltip'd
+    `AlertTriangle` next to its (now-excluded, not NaN'd) line total, plus a
+    banner above the totals panel whenever any item is flagged — so a
+    stray `.` is now visible at both the row and the total, and never
+    silently reads as "the whole estimate is worth $0.00."
+
+    **Verified**: added regression tests to `estimate-math.test.ts`
+    (12 tests, all passing) covering the exact failure mode — a bad
+    quantity now returns `0` instead of `NaN` from `calcItemTotal`, and a
+    two-item estimate with one bad item now totals correctly on the
+    remaining good item instead of NaN-ing to `$0.00`
+    (`"excludes one invalid item's numbers rather than NaN-ing the whole
+    total"`), plus coverage for `isValidLineItemNumber`/
+    `lineItemHasInvalidNumbers` directly. Lint/tsc-checked clean on both
+    changed files (`CostEstimator.tsx` unchanged at 52 problems vs.
+    baseline, `estimate-math.ts` zero issues). Not manually verified
+    end-to-end in the browser — the local dev preview requires signing in,
+    which is outside what I do myself; the math-level fix is the part that
+    actually mattered (the UI warning is a secondary affordance on top of
+    it), and it's fully covered by the test suite above.
 12. **Fix or remove the dead `labor_cost` column** (§7e) — low priority in
     isolation, cheap to fix alongside #9 since it's the same code path.
 13. **Build real test coverage for the persistence/approval logic** (§7f)

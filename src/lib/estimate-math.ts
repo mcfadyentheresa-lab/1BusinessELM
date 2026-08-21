@@ -13,10 +13,28 @@ export interface LineItem {
   ai_suggested: boolean;
 }
 
+const VALID_NUMBER_PATTERN = /^$|^\d+(\.\d+)?$/;
+
+export function isValidLineItemNumber(value: string): boolean {
+  return VALID_NUMBER_PATTERN.test(value);
+}
+
+export function lineItemHasInvalidNumbers(item: LineItem): boolean {
+  return (
+    !isValidLineItemNumber(item.quantity) ||
+    !isValidLineItemNumber(item.unit_cost) ||
+    !isValidLineItemNumber(item.material_cost)
+  );
+}
+
+function safeNumber(value: string): number {
+  return isValidLineItemNumber(value) && value !== "" ? parseFloat(value) : 0;
+}
+
 export function calcItemTotal(item: LineItem): number {
-  const qty = parseFloat(item.quantity || "0");
-  const labor = parseFloat(item.unit_cost || "0") * qty;
-  const material = parseFloat(item.material_cost || "0") * qty;
+  const qty = safeNumber(item.quantity);
+  const labor = safeNumber(item.unit_cost) * qty;
+  const material = safeNumber(item.material_cost) * qty;
   return labor + material;
 }
 
