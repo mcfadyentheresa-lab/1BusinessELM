@@ -542,12 +542,59 @@ before trusting the estimate piece completely. Starting with #9.**
     it), and it's fully covered by the test suite above.
 12. **Fix or remove the dead `labor_cost` column** (§7e) — low priority in
     isolation, cheap to fix alongside #9 since it's the same code path.
-13. **Build real test coverage for the persistence/approval logic** (§7f)
-    — Save, Approve, Unlock, and the RLS lock enforcement currently have no
-    regression protection beyond the one-time manual verification already
-    done. Given the PGlite-based RLS harness pattern already established
-    this session for the storage/tenancy work, the same approach applies
-    here.
+13. ~~**Build real test coverage for the persistence/approval logic**~~
+    (§7f) — **✅ FIXED (2026-08-21)**. Correction to this item's own
+    framing: no PGlite-based harness actually existed anywhere in the repo
+    before this — the storage/tenancy verification earlier this engagement
+    was manual, live, by-hand SQL Editor testing against production
+    (`BEGIN; SET LOCAL ROLE authenticated; ...; ROLLBACK;`), not an
+    automated test. That pattern is real and sound, though, so it's what
+    got automated here: `supabase/tests/db.ts` spins up a fresh in-memory
+    Postgres via `@electric-sql/pglite` (real Postgres compiled to WASM —
+    no Docker needed) and replays **every one of this project's actual 62
+    migration files**, in order, against it. Only 12 files are skipped, all
+    verified by inspection to touch nothing but the `storage`/`pg_net`
+    schemas Supabase manages outside user migrations and which nothing
+    estimate-related depends on. A hand-built `auth` schema stub
+    (`auth.uid()`/`auth.jwt()` reading the same `request.jwt.claims` GUC
+    PostgREST sets in production) plus the `ALTER DEFAULT PRIVILEGES` grants
+    Supabase's platform bootstrap applies outside of migrations stand in for
+    what Supabase provisions around user migrations. Tests then impersonate
+    a real user via `asUser()` — the same BEGIN/SET LOCAL ROLE/SET LOCAL
+    JWT-claims/ROLLBACK shape as the manual verification, just automated,
+    with an opt-in `{ commit: true }` for fixture setup a later test needs
+    to see.
+
+    Two suites, 20 tests, all exercising the actual RLS policies and
+    `SECURITY DEFINER` functions that ship to production (not a mock of
+    them): `supabase/tests/save-estimate.test.ts` covers atomicity (a
+    forced FK failure mid-insert leaves the prior item set intact, not
+    empty — item 9's regression), delete-then-replace semantics, admin-only
+    enforcement including the exact NULL-role bug caught live this
+    engagement (an unseeded identity, `get_my_role() IS NULL`, must still
+    be rejected — `IS DISTINCT FROM` not `<>`), the locked-estimate
+    rejection, and item 10's validation (garbage/negative rejected, empty
+    string allowed). `supabase/tests/estimate-approval.test.ts` covers
+    `approve_estimate`/`unlock_estimate` end to end — snapshot content,
+    audit-trail rows, the same NULL-role regression, the empty/whitespace
+    reason requirement — plus the RLS lock itself as defense in depth:
+    direct writes to an approved estimate's settings or line items are
+    rejected even for an admin bypassing the RPCs entirely, and
+    `estimate_status_history` accepts no UPDATE/DELETE from anyone, admin
+    included, because no such policy exists on it at all.
+
+    Building the harness surfaced one real gap in the harness itself, not
+    production: an early draft of the approval fixture used the
+    always-rollback `asUser()` to set up its "already approved" starting
+    state, so the approval never actually committed and four tests were
+    silently exercising a draft estimate instead of a locked one - caught
+    because the RLS-defense-in-depth tests then failed in a way that made
+    no sense for a still-draft estimate. Fixed by adding the `{ commit:
+    true }` option rather than by loosening what the tests asserted.
+
+    All 20 pass; full suite (36 tests across all four `*.test.ts` files)
+    runs in about a second, no Docker or network access required. Lint/tsc
+    clean on every new file.
 14. **Revisit "make it its own product" once 9-13 are done** — not sized,
     not started; see the note at the end of §7 for the reasoning on
     sequencing this after reliability, not before.
