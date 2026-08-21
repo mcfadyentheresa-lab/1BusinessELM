@@ -408,39 +408,35 @@ export default function CostEstimator() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const newEstimateId = estimateIdFromRoute;
-      await supabase.from("project_estimates").update({
-        markup_enabled: markupEnabled,
-        markup_percent: markupPct,
-        contingency_percent: contingencyPct,
-        management_fee_enabled: managementFeeEnabled,
-        management_fee_percent: managementFeePct,
-      }).eq("id", newEstimateId);
-      await supabase.from("estimate_items").delete().eq("estimate_id", newEstimateId);
       const realItems = items.filter(hasContent);
-      if (realItems.length > 0) {
-        const toInsert = realItems.map((item) => ({
-          estimate_id: newEstimateId,
-          category_id: item.category_id ? parseInt(item.category_id) : null,
+      const { error } = await supabase.rpc("save_estimate", {
+        p_estimate_id: estimateIdFromRoute,
+        p_markup_enabled: markupEnabled,
+        p_markup_percent: markupPct,
+        p_contingency_percent: contingencyPct,
+        p_management_fee_enabled: managementFeeEnabled,
+        p_management_fee_percent: managementFeePct,
+        p_items: realItems.map((item) => ({
+          category_id: item.category_id || null,
           custom_category: item.custom_category || null,
           room: item.room || null,
           quantity: item.quantity,
           unit_type: item.unit_type,
           unit_cost: item.unit_cost,
           material_cost: item.material_cost,
-          labor_cost: String(parseFloat(item.unit_cost) * parseFloat(item.quantity)),
           notes: item.notes || null,
-          assembly_id: item.assembly_id ? parseInt(item.assembly_id) : null,
+          assembly_id: item.assembly_id || null,
           material_from_assembly: item.material_from_assembly,
           ai_suggested: item.ai_suggested,
-        }));
-        await supabase.from("estimate_items").insert(toInsert);
-      }
+        })),
+      });
+      if (error) throw error;
       qc.invalidateQueries({ queryKey: ["estimate", estimateIdFromRoute] });
       qc.invalidateQueries({ queryKey: ["project-estimates", projectId] });
       toast({ title: "Estimate saved" });
-    } catch (e: any) {
-      toast({ title: "Error saving", description: e.message, variant: "destructive" });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Error saving";
+      toast({ title: "Error saving", description: message, variant: "destructive" });
     }
     setSaving(false);
   };

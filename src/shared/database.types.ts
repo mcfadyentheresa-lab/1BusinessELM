@@ -2036,6 +2036,30 @@ export interface Database {
         Args: { p_estimate_id: number };
         Returns: void;
       };
+      save_estimate: {
+        Args: {
+          p_estimate_id: number;
+          p_markup_enabled: boolean;
+          p_markup_percent: string;
+          p_contingency_percent: string;
+          p_management_fee_enabled: boolean;
+          p_management_fee_percent: string;
+          p_items: Array<{
+            category_id?: string | null;
+            custom_category?: string | null;
+            room?: string | null;
+            quantity: string;
+            unit_type: string;
+            unit_cost: string;
+            material_cost: string;
+            notes?: string | null;
+            assembly_id?: string | null;
+            material_from_assembly?: boolean;
+            ai_suggested?: boolean;
+          }>;
+        };
+        Returns: void;
+      };
       unlock_estimate: {
         Args: { p_estimate_id: number; p_reason: string };
         Returns: void;

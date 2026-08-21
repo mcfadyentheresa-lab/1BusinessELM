@@ -336,6 +336,9 @@ approve/unlock in §1: a single `SECURITY DEFINER` database function that
 does the update/delete/insert in one transaction, so a failure anywhere
 rolls back the whole save and a real error reaches the UI.
 
+**✅ 7a/7b FIXED (2026-08-20)** — see item 9 in the fix list below for the
+full detail and live verification evidence.
+
 **7c — zero input validation on quantity, unit cost, or material cost.**
 `CostEstimator.tsx:791-856`: all three are plain `<Input>` (text), no
 `type="number"`, no `min`, no pattern — nothing stops blank, negative, or
@@ -442,13 +445,32 @@ conversation for once the core is solid.
 
 **Reliability (§7) — the app's owner wants to work through this whole group
 before trusting the estimate piece completely. Starting with #9.**
-9. **[NEXT UP] Fix the Save flow (§7a/§7b)** — the highest-stakes item on
-   this whole list. Add real error checking to `handleSave`'s three writes
-   at minimum; the correct full fix is a single `SECURITY DEFINER` database
-   function (same pattern as `approve_estimate`/`unlock_estimate`) that does
-   the settings-update/delete/insert in one transaction, so a failure
-   anywhere rolls back the whole save instead of silently leaving an
-   estimate with zero line items.
+9. ~~**Fix the Save flow (§7a/§7b)**~~ — **✅ FIXED (2026-08-20)**. New
+   `save_estimate(p_estimate_id, ...settings, p_items jsonb)` — same
+   `SECURITY DEFINER` pattern as `approve_estimate`/`unlock_estimate` — does
+   the settings update, delete, and insert inside one Postgres transaction
+   (`supabase/migrations/20260820120000_atomic_save_estimate.sql`), so any
+   failure anywhere rolls back the whole save. Explicitly re-checks
+   `status = 'draft'` inside the function, since a `SECURITY DEFINER`
+   function would otherwise bypass the RLS lock enforcement from §1 —
+   confirmed live that saving a just-approved estimate is correctly
+   rejected (`Cannot save a locked estimate`). `CostEstimator.tsx`'s
+   `handleSave` now calls this RPC and actually checks its error, replacing
+   the three unchecked writes.
+
+   **Verified live** (all in rolled-back transactions, nothing in
+   production touched by the tests themselves): seeded a real line item,
+   then called `save_estimate` with a second item carrying a deliberately
+   invalid `assembly_id` (violates a foreign key) — the insert genuinely
+   failed, and the seeded item was still present afterward, confirming the
+   delete got rolled back too, not just the insert (this is the exact
+   scenario that used to silently empty an estimate). A genuine successful
+   save with two items — one with a garbage (`"abc"`) quantity — correctly
+   replaced the item set and computed `labor_cost: 0` for the bad value
+   via a new `safe_numeric()` helper, instead of the old code's literal
+   `"NaN"` string (§7e; the helper doesn't fix 7c/7d, it just stops this
+   one function from making them worse). A non-admin identity attempting
+   to call `save_estimate` directly was correctly rejected.
 10. **Add input validation to quantity/unit cost/material cost** (§7c) —
     at minimum reject non-numeric and negative values before they can be
     typed in or saved.
