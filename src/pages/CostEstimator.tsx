@@ -67,6 +67,19 @@ const EMPTY_LINE_ITEM: LineItem = {
   ai_suggested: false,
 };
 
+/**
+ * Strips a quantity/cost input down to a valid non-negative decimal (or
+ * empty string, so the field can still be cleared while editing). Applied
+ * to the full resulting value on every change, so it also sanitizes paste
+ * — not just keystrokes.
+ */
+function sanitizeNumericInput(value: string): string {
+  if (value === "") return "";
+  const digitsAndDots = value.replace(/[^\d.]/g, "");
+  const [whole, ...rest] = digitsAndDots.split(".");
+  return rest.length > 0 ? `${whole}.${rest.join("")}` : whole;
+}
+
 function hasContent(item: LineItem): boolean {
   if (item.category_id) return true;
   if (item.custom_category.trim()) return true;
@@ -788,7 +801,8 @@ export default function CostEstimator() {
                         className="h-8 text-xs text-right"
                         placeholder="Qty"
                         value={item.quantity}
-                        onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, quantity: e.target.value, ai_suggested: false } : it))}
+                        onChange={(e) => { const v = sanitizeNumericInput(e.target.value); setItems((prev) => prev.map((it, i) => i === idx ? { ...it, quantity: v, ai_suggested: false } : it)); }}
+                        inputMode="decimal"
                         disabled={isLocked}
                       />
                     </div>
@@ -813,7 +827,8 @@ export default function CostEstimator() {
                           className="h-8 text-xs pl-5"
                           placeholder={labourPlaceholder(item.unit_type)}
                           value={item.unit_cost}
-                          onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, unit_cost: e.target.value, ai_suggested: false } : it))}
+                          onChange={(e) => { const v = sanitizeNumericInput(e.target.value); setItems((prev) => prev.map((it, i) => i === idx ? { ...it, unit_cost: v, ai_suggested: false } : it)); }}
+                          inputMode="decimal"
                           disabled={isLocked}
                         />
                         {(item.unit_type === "hour" || item.unit_type === "day") && (
@@ -847,7 +862,8 @@ export default function CostEstimator() {
                           className="h-8 text-xs pl-5"
                           placeholder={materialPlaceholder(item.unit_type)}
                           value={item.material_cost}
-                          onChange={(e) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, material_cost: e.target.value, material_from_assembly: false, ai_suggested: false } : it))}
+                          onChange={(e) => { const v = sanitizeNumericInput(e.target.value); setItems((prev) => prev.map((it, i) => i === idx ? { ...it, material_cost: v, material_from_assembly: false, ai_suggested: false } : it)); }}
+                          inputMode="decimal"
                           disabled={isLocked}
                         />
                       </div>

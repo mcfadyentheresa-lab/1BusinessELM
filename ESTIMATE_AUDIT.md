@@ -344,6 +344,9 @@ full detail and live verification evidence.
 `type="number"`, no `min`, no pattern — nothing stops blank, negative, or
 non-numeric text from being typed in.
 
+**✅ 7c FIXED (2026-08-20)** — see item 10 in the fix list below for the
+full detail and live verification evidence.
+
 **7d — that gap has a silent, ugly consequence: one bad character zeroes
 the whole displayed total.** `formatCurrency` (`src/lib/utils.ts:8-12`)
 converts `NaN` to `"$0.00"` instead of surfacing an error. The totals chain
@@ -471,9 +474,32 @@ before trusting the estimate piece completely. Starting with #9.**
    `"NaN"` string (§7e; the helper doesn't fix 7c/7d, it just stops this
    one function from making them worse). A non-admin identity attempting
    to call `save_estimate` directly was correctly rejected.
-10. **Add input validation to quantity/unit cost/material cost** (§7c) —
-    at minimum reject non-numeric and negative values before they can be
-    typed in or saved.
+10. ~~**Add input validation to quantity/unit cost/material cost**~~ (§7c) —
+    **✅ FIXED (2026-08-20)**. Two layers: client-side, `CostEstimator.tsx`'s
+    quantity/unit_cost/material_cost `<Input>`s now run through a new
+    `sanitizeNumericInput()` helper on every change, stripping any character
+    that isn't a digit or `.` and collapsing extra `.`s, plus
+    `inputMode="decimal"` for a numeric keyboard on mobile — invalid
+    characters can no longer be typed or pasted in. Server-side (closing the
+    gap for a direct API call that bypasses the client entirely),
+    `save_estimate` (`supabase/migrations/20260820130000_validate_estimate_item_numbers.sql`)
+    now rejects the entire save if any line item's quantity, unit_cost, or
+    material_cost is non-empty and not a valid non-negative decimal, before
+    any write — inside the same atomic transaction as item 9, so an invalid
+    item rejects the whole save with nothing touched. Empty string stays
+    allowed (a placeholder item with just a category set), matching the
+    fix's own framing — only garbage and negative values are rejected.
+
+    **Verified live** (all in rolled-back transactions, nothing in
+    production touched by the tests themselves): a save with a garbage
+    quantity (`"abc"`) was rejected with the new error message; a save with
+    a negative quantity (`"-5"`) was rejected the same way; a save with a
+    valid decimal item (`quantity: "12.5"`) alongside a second item with
+    empty-string quantity/unit_cost/material_cost succeeded, and both rows
+    landed correctly (empty strings stored as empty, not coerced or
+    rejected). Client-side sanitizer changes checked lint/tsc-clean against
+    the pre-change baseline (52 problems before and after — no new issues
+    introduced).
 11. **Stop `NaN` from silently rendering as `$0.00`** (§7d) — either guard
     the totals chain in `estimate-math.ts` so a bad value surfaces as a
     visible warning on the specific line item, or (better, and this only
