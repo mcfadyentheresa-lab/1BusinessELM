@@ -435,16 +435,59 @@ conversation for once the core is solid.
    by, and gated the same as, `TENANCY_AUDIT.md` item 4 — no separate
    action needed, just noting these three functions by name for whenever
    that structural work actually starts.
-8. **Clients can't see their own estimate at all, not even after it's
-   approved and sent** — raised by the app's owner (2026-08-19) while
-   testing the new approval flow via the "Preview as: Client" toggle. See
-   the "Open product question" note under §5 for the full framing. Explicitly
-   deferred — "add to the list to address when it makes sense," not sized
-   or scoped yet. When it's picked up, the real question to answer first is
-   *what* a client should see (the full line-item breakdown, or just the
-   locked total/summary) before reaching for an RLS policy — that product
-   decision should come before the implementation, same as the locked-
-   estimate work did.
+8. ~~**Clients can't see their own estimate at all, not even after it's
+   approved and sent**~~ — **✅ FIXED (2026-08-21)**. Raised by the app's
+   owner (2026-08-19) while testing the approval flow; decided (2026-08-21)
+   that clients should see a summary only, never the per-item breakdown —
+   deliberately, not just as a smaller first version. `unit_cost`/
+   `material_cost` are pre-markup costs, and markup/contingency/management
+   fee apply once to the whole subtotal, not per line, so a raw line-item
+   price shown to a client wouldn't even match what they're paying for
+   that line, on top of exposing the underlying cost structure alongside
+   it.
+
+   Built as `get_client_estimate_summary(p_project_id)`
+   (`supabase/migrations/20260821150000_client_estimate_summary_rpc.sql`) —
+   a `SECURITY DEFINER` function in the same family as
+   `save_estimate`/`approve_estimate`/`unlock_estimate`, not a new RLS
+   policy on `project_estimates`/`estimate_items`: Postgres RLS is
+   row-level, so a policy can't show `room`/`quantity` while hiding
+   `unit_cost` on the same row. Returns only the rooms covered and the
+   final approved total, computed via the identical subtotal →
+   contingency → markup → management fee chain as
+   `computeEstimateTotals()` (`estimate-math.ts`), so the number can never
+   drift from what it meant at approval time. Only ever looks at the most
+   recently *approved* estimate for the project — a draft returns `null`,
+   consistent with drafts never being client-facing. Authorized to the
+   project's `client_id` or an admin (so the existing "Preview as: Client"
+   toggle keeps working for testing) — checked in the same
+   `IS DISTINCT FROM`-safe style as the rest of this engagement's
+   `SECURITY DEFINER` functions.
+
+   Noted in passing, not fixed here: `projects.budget_visible_to_client`
+   has the same shape of gap this avoids — it's only enforced by the
+   frontend hiding the field, so a client hitting the REST API directly
+   still gets the full `projects` row including `total_budget` regardless
+   of the toggle.
+
+   Frontend: a "Your Estimate" card on `ProjectDetails.tsx`'s Overview tab,
+   visible only to `role === "client"`, showing the total, approval date,
+   and room badges — no unit rates, no per-item costs, no edit surface at
+   all (unlike admin/crew, who are still fully blocked from the estimate
+   routes by the `RoleGuard` added in item 3).
+
+   **Verified**: 5 new tests in
+   `supabase/tests/client-estimate-summary.test.ts` (41 tests total across
+   the whole suite, all passing) covering the room/total shape, the exact
+   fee-chain math
+   (hand-calculated against the same reference case used in
+   `estimate-math.test.ts`), the draft-returns-null case, a client on a
+   *different* project being rejected, and admin access. Also verified
+   live in production (rolled back): an admin call against a real project
+   returned the correct summary shape, and a fabricated non-owning
+   identity was correctly rejected with "Not authorized to view this
+   project's estimate." Lint/tsc clean on all changed files (no new issues
+   vs. baseline).
 
 **Reliability (§7) — the app's owner wants to work through this whole group
 before trusting the estimate piece completely. Starting with #9.**

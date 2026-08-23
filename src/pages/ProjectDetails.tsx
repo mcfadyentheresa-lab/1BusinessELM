@@ -309,6 +309,16 @@ export default function ProjectDetails() {
     enabled: activeTab === "selections",
   });
 
+  const { data: clientEstimateSummary } = useQuery<{ approved_at: string; total: number; rooms: string[] } | null>({
+    queryKey: ["client-estimate-summary", projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("get_client_estimate_summary", { p_project_id: projectId });
+      if (error) throw error;
+      return data;
+    },
+    enabled: user?.role === "client",
+  });
+
   const { data: wishlistItems, isLoading: wishlistLoading } = useQuery<WishlistItemWithUser[]>({
     queryKey: ["wishlist", projectId],
     queryFn: async () => {
@@ -753,6 +763,32 @@ export default function ProjectDetails() {
                     </div>
                     <Progress value={budgetPct} className="h-2" />
                     <p className="text-xs text-muted-foreground mt-1">{budgetPct}% utilized</p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Estimate (client view - summary only, never the per-item breakdown) */}
+              {user?.role === "client" && clientEstimateSummary && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <ClipboardList className="h-4 w-4 text-muted-foreground" /> Your Estimate
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <span className="text-2xl font-bold tabular-nums" style={{ fontFamily: "var(--font-mono)" }}>
+                      {formatCurrency(clientEstimateSummary.total)}
+                    </span>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Approved {formatDate(clientEstimateSummary.approved_at)}
+                    </p>
+                    {clientEstimateSummary.rooms.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-3">
+                        {clientEstimateSummary.rooms.map((room) => (
+                          <Badge key={room} variant="secondary" className="font-normal">{room}</Badge>
+                        ))}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               )}

@@ -2061,6 +2061,14 @@ export interface Database {
         Args: { p_estimate_id: number; p_reason: string };
         Returns: void;
       };
+      get_client_estimate_summary: {
+        Args: { p_project_id: number };
+        Returns: {
+          approved_at: string;
+          total: number;
+          rooms: string[];
+        } | null;
+      };
       get_invite_by_token: {
         Args: { p_token: string };
         Returns: {
