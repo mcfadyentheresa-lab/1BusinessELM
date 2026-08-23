@@ -540,8 +540,21 @@ before trusting the estimate piece completely. Starting with #9.**
     which is outside what I do myself; the math-level fix is the part that
     actually mattered (the UI warning is a secondary affordance on top of
     it), and it's fully covered by the test suite above.
-12. **Fix or remove the dead `labor_cost` column** (§7e) — low priority in
-    isolation, cheap to fix alongside #9 since it's the same code path.
+12. ~~**Fix or remove the dead `labor_cost` column**~~ (§7e) —
+    **✅ FIXED (2026-08-21)**. Removed rather than wired up — grepping
+    `src/` and `supabase/functions/` confirmed nothing ever read it back,
+    so there was no reporting/UI need to preserve. `ALTER TABLE
+    estimate_items DROP COLUMN labor_cost;`
+    (`supabase/migrations/20260821140000_drop_dead_labor_cost_column.sql`),
+    `save_estimate` no longer computes or inserts it, and `safe_numeric()`
+    (added in 20260820120000 solely to make that computation NaN-safe) is
+    dropped too since it had no other caller left. `database.types.ts`
+    updated to match. Verified live: `save_estimate` still saves correctly
+    post-migration (checked in a rolled-back transaction — the returned row
+    has no `labor_cost` field at all), and the full test suite (36 tests,
+    including the item 13 harness which replays this migration as part of
+    its real migration history) still passes with no changes needed to any
+    test.
 13. ~~**Build real test coverage for the persistence/approval logic**~~
     (§7f) — **✅ FIXED (2026-08-21)**. Correction to this item's own
     framing: no PGlite-based harness actually existed anywhere in the repo

@@ -1240,7 +1240,6 @@ export interface Database {
           quantity: string;
           unit_cost: string;
           material_cost: string;
-          labor_cost: string;
           is_custom_rate: boolean | null;
           market_rate_id: number | null;
           notes: string | null;
@@ -1261,7 +1260,6 @@ export interface Database {
           quantity: string;
           unit_cost: string;
           material_cost: string;
-          labor_cost: string;
           is_custom_rate?: boolean | null;
           market_rate_id?: number | null;
           notes?: string | null;
@@ -1281,7 +1279,6 @@ export interface Database {
           quantity?: string;
           unit_cost?: string;
           material_cost?: string;
-          labor_cost?: string;
           is_custom_rate?: boolean | null;
           market_rate_id?: number | null;
           notes?: string | null;
