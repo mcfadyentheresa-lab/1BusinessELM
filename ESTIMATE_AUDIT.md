@@ -608,6 +608,22 @@ before trusting the estimate piece completely. Starting with #9.**
     All 20 pass; full suite (36 tests across all four `*.test.ts` files)
     runs in about a second, no Docker or network access required. Lint/tsc
     clean on every new file.
-14. **Revisit "make it its own product" once 9-13 are done** — not sized,
-    not started; see the note at the end of §7 for the reasoning on
-    sequencing this after reliability, not before.
+14. **Revisit "make it its own product" once 9-13 are done** — discussed
+    (2026-08-21), now that 9-13 are all fixed. Conclusion: the estimator's
+    own code (`CostEstimator.tsx`, `estimate-math.ts`, its dozen-ish
+    tables) is already fairly self-contained and now reliable — the actual
+    blocker for either framing (a plugin ELM users enable, or a fully
+    standalone white-label app) is the multi-tenancy rewrite
+    `TENANCY_AUDIT.md` already scoped: every RLS policy here checks
+    `get_my_role() = 'admin'`, not "does this row belong to your business,"
+    so there's no way to isolate a second contractor's estimates without
+    it. The two framings aren't equally sized once tenancy is done, though
+    — a plugin reuses ELM's existing auth/projects/profiles and just needs
+    the estimator's supporting tables (categories, market rates, assemblies)
+    scoped per-tenant and feature-flagged; a standalone app is a separate
+    product with its own auth/onboarding/billing that happens to reuse some
+    SQL and components. Explicitly a someday/phase-2 idea, not driven by a
+    specific second contractor or licensing conversation right now — stays
+    exactly where `TENANCY_AUDIT.md` already put it: real but not urgent,
+    revisit when a second business is actually on the table, at which point
+    plugin-vs-standalone becomes the next question to answer.
