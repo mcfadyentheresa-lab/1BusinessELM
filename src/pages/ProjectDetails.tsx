@@ -3,6 +3,7 @@ import { useParams, useLocation, useSearch } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/use-auth";
+import { useViewAs } from "@/contexts/view-as";
 import { useUpdateMilestone, useDeleteMilestone, useCreateSubMilestone, useUpdateSubMilestone, useUploadImage } from "@/hooks/use-projects";
 import { useUpload } from "@/hooks/use-upload";
 import { Button } from "@/components/ui/button";
@@ -69,6 +70,8 @@ export default function ProjectDetails() {
   const [, navigate] = useLocation();
   const searchStr = useSearch();
   const { user } = useAuth();
+  const { previewRole } = useViewAs();
+  const isPreviewingClient = user?.role === "admin" && previewRole === "client";
   const qc = useQueryClient();
   const projectId = parseInt(id);
   const isAdminOrCrew = user?.role === "admin" || user?.role === "crew";
@@ -316,7 +319,7 @@ export default function ProjectDetails() {
       if (error) throw error;
       return data;
     },
-    enabled: user?.role === "client",
+    enabled: user?.role === "client" || isPreviewingClient,
   });
 
   const { data: wishlistItems, isLoading: wishlistLoading } = useQuery<WishlistItemWithUser[]>({
@@ -768,7 +771,7 @@ export default function ProjectDetails() {
               )}
 
               {/* Estimate (client view - summary only, never the per-item breakdown) */}
-              {user?.role === "client" && clientEstimateSummary && (
+              {(user?.role === "client" || isPreviewingClient) && clientEstimateSummary && (
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
