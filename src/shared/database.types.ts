@@ -1327,6 +1327,26 @@ export interface Database {
         };
         Relationships: never[];
       };
+      estimate_status_history: {
+        Row: {
+          id: number;
+          estimate_id: number;
+          action: string;
+          snapshot: unknown | null;
+          reason: string | null;
+          performed_by: string | null;
+          performed_at: string;
+        };
+        Insert: {
+          estimate_id: number;
+          action: string;
+          snapshot?: unknown | null;
+          reason?: string | null;
+          performed_by?: string | null;
+        };
+        Update: never;
+        Relationships: never[];
+      };
       receipts: {
         Row: {
           id: number;
