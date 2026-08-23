@@ -764,6 +764,17 @@ export default function CostEstimator() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
+            {items.length > 0 && (
+              <div className="hidden sm:grid grid-cols-12 gap-2 px-3 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                <div className="sm:col-span-3">Category</div>
+                <div className="sm:col-span-2">Room</div>
+                <div className="sm:col-span-1">Qty</div>
+                <div className="sm:col-span-1">Unit</div>
+                <div className="sm:col-span-2">Labour cost</div>
+                <div className="sm:col-span-2">Material cost</div>
+                <div className="sm:col-span-1">Total</div>
+              </div>
+            )}
             {items.map((item, idx) => {
               const itemWarnings = item.id ? (itemLevelByItem.get(item.id) ?? []) : [];
               const activeItemWarnings = itemWarnings.filter((w) => !w.ignored && w.source === "audit");
@@ -824,6 +835,7 @@ export default function CostEstimator() {
                       </Select>
                     </div>
                     <div className="col-span-4 sm:col-span-2">
+                      <p className="text-[9px] text-muted-foreground/70 mb-0.5 px-0.5 sm:hidden">Labour cost</p>
                       <div className="relative">
                         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
                         <Input
@@ -859,6 +871,7 @@ export default function CostEstimator() {
                       )}
                     </div>
                     <div className="col-span-4 sm:col-span-2">
+                      <p className="text-[9px] text-muted-foreground/70 mb-0.5 px-0.5 sm:hidden">Material cost</p>
                       <div className="relative">
                         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
                         <Input
