@@ -483,8 +483,9 @@ export default function CostEstimator() {
       qc.invalidateQueries({ queryKey: ["project-estimates", projectId] });
       setRenameOpen(false);
       toast({ title: "Estimate renamed" });
-    } catch (e: any) {
-      toast({ title: "Rename failed", description: e.message, variant: "destructive" });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Rename failed";
+      toast({ title: "Rename failed", description: message, variant: "destructive" });
     }
     setRenaming(false);
   };
@@ -572,8 +573,9 @@ export default function CostEstimator() {
       const fresh = await refetchWarnings();
       const freshActive = (fresh.data ?? []).filter((w) => !w.ignored && w.source === "audit").length;
       toast({ title: `Audit complete — ${freshActive} warning${freshActive !== 1 ? "s" : ""} found` });
-    } catch (e: any) {
-      toast({ title: "Audit failed", description: e.message, variant: "destructive" });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Audit failed";
+      toast({ title: "Audit failed", description: message, variant: "destructive" });
     }
     setAuditing(false);
   };
@@ -606,8 +608,9 @@ export default function CostEstimator() {
           ? `Client review complete — ${freshActive} item${freshActive !== 1 ? "s" : ""} flagged`
           : "Client review complete — no unclear items found",
       });
-    } catch (e: any) {
-      toast({ title: "Client review failed", description: e.message, variant: "destructive" });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Client review failed";
+      toast({ title: "Client review failed", description: message, variant: "destructive" });
     }
     setReviewing(false);
   };
@@ -624,8 +627,9 @@ export default function CostEstimator() {
       refetchWarnings();
       qc.invalidateQueries({ queryKey: ["estimate-warnings", estimateId] });
     },
-    onError: (e: any) => {
-      toast({ title: "Update failed", description: e.message, variant: "destructive" });
+    onError: (e) => {
+      const message = e instanceof Error ? e.message : "Update failed";
+      toast({ title: "Update failed", description: message, variant: "destructive" });
     },
   });
 
@@ -660,8 +664,9 @@ export default function CostEstimator() {
       if (!res.ok) throw new Error(json?.error ?? `Generate failed (${res.status})`);
       setDraftSuggestions(json.suggestions ?? []);
       setDraftSelections({});
-    } catch (e: any) {
-      toast({ title: "Generate draft failed", description: e.message, variant: "destructive" });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Generate draft failed";
+      toast({ title: "Generate draft failed", description: message, variant: "destructive" });
     }
     setGenerating(false);
   };

@@ -214,15 +214,25 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // DUPLICATE — group by (room, category_id), flag all but the first in each group
-    const groupKey = (item: EstimateItem) => `${item.room ?? ""}|${item.category_id ?? "null"}`;
+    // DUPLICATE — group by (room, category identity), flag all but the first
+    // in each group. Category identity is category_id when the item uses a
+    // standard category, or the trimmed/lowercased custom_category text
+    // otherwise - previously this skipped every custom-category item
+    // entirely (`if (item.category_id === null) continue`), so two
+    // identical custom line items in the same room were never flagged.
+    const groupKey = (item: EstimateItem) => {
+      const categoryIdentity = item.category_id !== null
+        ? `cat:${item.category_id}`
+        : `custom:${(item.custom_category ?? "").trim().toLowerCase()}`;
+      return `${item.room ?? ""}|${categoryIdentity}`;
+    };
     const seenGroups = new Map<string, number>();
     for (const item of estimateItems) {
-      if (item.category_id === null) continue;
+      if (item.category_id === null && !item.custom_category) continue;
       const key = groupKey(item);
       const count = seenGroups.get(key) ?? 0;
       if (count > 0) {
-        const catName = item.cost_categories?.name ?? "this category";
+        const catName = item.cost_categories?.name ?? item.custom_category ?? "this category";
         const roomLabel = item.room ?? "no room";
         warnings.push({
           estimate_item_id: item.id,
