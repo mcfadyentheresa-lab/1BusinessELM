@@ -31,7 +31,7 @@ function safeNumber(value: string): number {
   return isValidLineItemNumber(value) && value !== "" ? parseFloat(value) : 0;
 }
 
-export function calcItemTotal(item: LineItem): number {
+export function calcItemTotal(item: Pick<LineItem, "quantity" | "unit_cost" | "material_cost">): number {
   const qty = safeNumber(item.quantity);
   const labor = safeNumber(item.unit_cost) * qty;
   const material = safeNumber(item.material_cost) * qty;
@@ -56,7 +56,7 @@ export interface EstimateTotals {
   total: number;
 }
 
-export function computeEstimateTotals(items: LineItem[], options: EstimateTotalsOptions): EstimateTotals {
+export function computeEstimateTotals(items: Pick<LineItem, "quantity" | "unit_cost" | "material_cost">[], options: EstimateTotalsOptions): EstimateTotals {
   const subtotal = items.reduce((s, item) => s + calcItemTotal(item), 0);
   const contingency = subtotal * (safeNumber(options.contingencyPct) / 100);
   const subtotalWithContingency = subtotal + contingency;

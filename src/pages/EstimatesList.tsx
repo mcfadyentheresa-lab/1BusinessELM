@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { computeEstimateTotals } from "@/lib/estimate-math";
 import { Plus, FileText, Loader2, ArrowLeft, ChevronRight, Pencil } from "lucide-react";
 
 interface EstimateWithItems {
@@ -27,23 +28,14 @@ interface EstimateWithItems {
   items: Array<{ quantity: string; unit_cost: string; material_cost: string }> | null;
 }
 
-function calcLineTotal(item: { quantity: string; unit_cost: string; material_cost: string }): number {
-  const qty = parseFloat(item.quantity || "0");
-  const labor = parseFloat(item.unit_cost || "0") * qty;
-  const material = parseFloat(item.material_cost || "0") * qty;
-  return labor + material;
-}
-
 function calcEstimateTotal(est: EstimateWithItems): number {
-  const items = est.items ?? [];
-  const subtotal = items.reduce((s, i) => s + calcLineTotal(i), 0);
-  const contingencyPct = parseFloat(est.contingency_percent || "0");
-  const contingency = subtotal * (contingencyPct / 100);
-  const subtotalWithContingency = subtotal + contingency;
-  const markup = est.markup_enabled ? subtotalWithContingency * (parseFloat(est.markup_percent || "0") / 100) : 0;
-  const subtotalWithMarkup = subtotalWithContingency + markup;
-  const mgmtFee = est.management_fee_enabled ? subtotalWithMarkup * (parseFloat(est.management_fee_percent || "0") / 100) : 0;
-  return subtotalWithMarkup + mgmtFee;
+  return computeEstimateTotals(est.items ?? [], {
+    contingencyPct: est.contingency_percent ?? "0",
+    markupEnabled: !!est.markup_enabled,
+    markupPct: est.markup_percent,
+    managementFeeEnabled: !!est.management_fee_enabled,
+    managementFeePct: est.management_fee_percent,
+  }).total;
 }
 
 export default function EstimatesList() {
@@ -104,8 +96,9 @@ export default function EstimatesList() {
       setDialogOpen(false);
       setNewName("");
       navigate(`/project/${pid}/estimate/${data.id}`);
-    } catch (e: any) {
-      toast({ title: "Couldn't create estimate", description: e.message, variant: "destructive" });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Couldn't create estimate";
+      toast({ title: "Couldn't create estimate", description: message, variant: "destructive" });
     }
     setCreating(false);
   };
@@ -119,8 +112,9 @@ export default function EstimatesList() {
       qc.invalidateQueries({ queryKey: ["project-estimates", pid] });
       setRenameTarget(null);
       toast({ title: "Estimate renamed" });
-    } catch (e: any) {
-      toast({ title: "Rename failed", description: e.message, variant: "destructive" });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Rename failed";
+      toast({ title: "Rename failed", description: message, variant: "destructive" });
     }
     setRenaming(false);
   };

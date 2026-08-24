@@ -788,3 +788,19 @@ before trusting the estimate piece completely. Starting with #9.**
   rates with no single authoritative source to verify against, unlike a
   published government fee schedule - worth the app owner's own periodic
   review rather than a web search standing in for their pricing judgment.
+- `EstimatesList.tsx` had its own separate reimplementation of the total
+  calculation (`calcLineTotal`/`calcEstimateTotal`, raw `parseFloat()`, no
+  NaN guards) instead of using `estimate-math.ts`'s `computeEstimateTotals`
+  - two independent copies of the same formula that could silently drift:
+  the list page and `CostEstimator.tsx`'s detail page could show different
+  totals for the *same* estimate, and this copy had none of the item
+  11/item 16 NaN-safety fixes since it was never touched when those
+  landed. Deleted the duplicate; the list page now imports and calls the
+  same `computeEstimateTotals` the detail page uses, so both can never
+  disagree and both automatically inherit any future fix to the shared
+  math. (`calcItemTotal`/`computeEstimateTotals` signatures loosened to
+  `Pick<LineItem, "quantity" | "unit_cost" | "material_cost">` so the list
+  page's leaner per-item fetch - it only selects those three columns, not
+  the full line-item shape - still satisfies the type.) Also fixed the
+  same two `catch (e: any)` blocks in this file for consistency. tsc/lint/
+  build/full test suite all clean, no regressions.
