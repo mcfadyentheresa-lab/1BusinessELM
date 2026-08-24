@@ -71,10 +71,14 @@ export default function ProjectDetails() {
   const searchStr = useSearch();
   const { user } = useAuth();
   const { previewRole } = useViewAs();
-  const isPreviewingClient = user?.role === "admin" && previewRole === "client";
+  // Matches AppShell/RoleGuard exactly, so "Preview as: Client/Crew" hides
+  // the same admin-only actions here that it hides in the nav and routes -
+  // an admin previewing sees exactly what that role would, not their own
+  // full admin UI with just an extra card bolted on.
+  const effectiveRole = user?.role === "admin" && previewRole ? previewRole : (user?.role ?? "");
   const qc = useQueryClient();
   const projectId = parseInt(id);
-  const isAdminOrCrew = user?.role === "admin" || user?.role === "crew";
+  const isAdminOrCrew = effectiveRole === "admin" || effectiveRole === "crew";
 
   const photoInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
@@ -319,7 +323,7 @@ export default function ProjectDetails() {
       if (error) throw error;
       return data;
     },
-    enabled: user?.role === "client" || isPreviewingClient,
+    enabled: effectiveRole === "client",
   });
 
   const { data: wishlistItems, isLoading: wishlistLoading } = useQuery<WishlistItemWithUser[]>({
@@ -597,8 +601,8 @@ export default function ProjectDetails() {
   const completedTasks = (tasks ?? []).filter((t: TaskWithAssignee) => t.status === "done").length;
   const totalTasks = (tasks ?? []).length;
 
-  const isAdmin = user?.role === "admin";
-  const isCrew = user?.role === "crew";
+  const isAdmin = effectiveRole === "admin";
+  const isCrew = effectiveRole === "crew";
 
   const TABS = [
     { id: "overview", label: "Overview", icon: LayoutGrid },
@@ -750,7 +754,7 @@ export default function ProjectDetails() {
               )}
 
               {/* Budget */}
-              {(isAdmin || (project.budget_visible_to_client && user?.role === "client")) && project.total_budget && (
+              {(isAdmin || (project.budget_visible_to_client && effectiveRole === "client")) && project.total_budget && (
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
@@ -771,7 +775,7 @@ export default function ProjectDetails() {
               )}
 
               {/* Estimate (client view - summary only, never the per-item breakdown) */}
-              {(user?.role === "client" || isPreviewingClient) && clientEstimateSummary && (
+              {effectiveRole === "client" && clientEstimateSummary && (
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
