@@ -316,7 +316,13 @@ export default function ProjectDetails() {
     enabled: activeTab === "selections",
   });
 
-  const { data: clientEstimateSummary } = useQuery<{ approved_at: string; total: number; rooms: string[] } | null>({
+  const { data: clientEstimateSummary } = useQuery<{
+    approved_at: string;
+    total: number;
+    rooms: string[];
+    document_title: string | null;
+    document_url: string | null;
+  } | null>({
     queryKey: ["client-estimate-summary", projectId],
     queryFn: async () => {
       const { data, error } = await supabase.rpc("get_client_estimate_summary", { p_project_id: projectId });
@@ -795,6 +801,17 @@ export default function ProjectDetails() {
                           <Badge key={room} variant="secondary" className="font-normal">{room}</Badge>
                         ))}
                       </div>
+                    )}
+                    {clientEstimateSummary.document_url && (
+                      <a
+                        href={clientEstimateSummary.document_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 mt-3 p-2 rounded-md border border-border hover:bg-muted/50 transition-colors text-sm"
+                      >
+                        <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <span className="truncate">{clientEstimateSummary.document_title}</span>
+                      </a>
                     )}
                   </CardContent>
                 </Card>

@@ -199,6 +199,20 @@ export default function CostEstimator() {
     enabled: !!estimateIdFromRoute,
   });
 
+  const { data: estimateDocument } = useQuery({
+    queryKey: ["estimate-document", estimate?.document_id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("documents")
+        .select("id, title, url")
+        .eq("id", estimate!.document_id as number)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!estimate?.document_id,
+  });
+
   const { data: categories } = useQuery({
     queryKey: ["cost-categories"],
     queryFn: async () => {
@@ -260,6 +274,8 @@ export default function CostEstimator() {
   const [unlockOpen, setUnlockOpen] = useState(false);
   const [unlockReason, setUnlockReason] = useState("");
   const [unlocking, setUnlocking] = useState(false);
+  const [attachingDocument, setAttachingDocument] = useState(false);
+  const documentInputRef = useRef<HTMLInputElement>(null);
 
   const estimateId = estimateIdFromRoute;
 
@@ -509,6 +525,29 @@ export default function CostEstimator() {
     setUnlocking(false);
   };
 
+  const handleAttachDocument = async (file: File) => {
+    setAttachingDocument(true);
+    try {
+      const result = await uploadFile(file);
+      if (!result) throw new Error("Upload failed");
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "file";
+      const title = file.name.replace(/\.[^/.]+$/, "");
+      const { error } = await supabase.rpc("attach_estimate_document", {
+        p_estimate_id: estimateIdFromRoute,
+        p_title: title,
+        p_url: result.objectPath,
+        p_type: ext,
+      });
+      if (error) throw error;
+      qc.invalidateQueries({ queryKey: ["estimate", estimateIdFromRoute] });
+      toast({ title: "Document attached" });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Attach failed";
+      toast({ title: "Attach failed", description: message, variant: "destructive" });
+    }
+    setAttachingDocument(false);
+  };
+
   const handleAudit = async () => {
     if (!estimateId) return;
     setAuditing(true);
@@ -752,6 +791,52 @@ export default function CostEstimator() {
                 </div>
               </div>
             ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {isLocked && (
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <Paperclip className="h-4 w-4 text-muted-foreground" /> Client document
+            </CardTitle>
+            <CardDescription>Optional - attach a document (e.g. a signed proposal) to show a link on the client's estimate card.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {estimateDocument ? (
+              <a
+                href={estimateDocument.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+              >
+                <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+                <span className="text-sm font-medium text-foreground truncate flex-1">{estimateDocument.title}</span>
+              </a>
+            ) : (
+              <p className="text-sm text-muted-foreground mb-2">No document attached yet.</p>
+            )}
+            <input
+              ref={documentInputRef}
+              type="file"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleAttachDocument(file);
+                e.target.value = "";
+              }}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 mt-2"
+              disabled={attachingDocument}
+              onClick={() => documentInputRef.current?.click()}
+            >
+              {attachingDocument ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" />}
+              {estimateDocument ? "Replace document" : "Attach document"}
+            </Button>
           </CardContent>
         </Card>
       )}

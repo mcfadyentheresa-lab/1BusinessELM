@@ -1189,6 +1189,7 @@ export interface Database {
           created_at: string | null;
           last_audited_at: string | null;
           last_client_reviewed_at: string | null;
+          document_id: number | null;
         };
         Insert: {
           project_id: number;
@@ -1207,6 +1208,7 @@ export interface Database {
           created_by?: string | null;
           last_audited_at?: string | null;
           last_client_reviewed_at?: string | null;
+          document_id?: number | null;
         };
         Update: {
           project_id?: number;
@@ -1225,6 +1227,7 @@ export interface Database {
           created_by?: string | null;
           last_audited_at?: string | null;
           last_client_reviewed_at?: string | null;
+          document_id?: number | null;
         };
         Relationships: never[];
       };
@@ -2087,7 +2090,13 @@ export interface Database {
           approved_at: string;
           total: number;
           rooms: string[];
+          document_title: string | null;
+          document_url: string | null;
         } | null;
+      };
+      attach_estimate_document: {
+        Args: { p_estimate_id: number; p_title: string; p_url: string; p_type: string };
+        Returns: number;
       };
       get_invite_by_token: {
         Args: { p_token: string };

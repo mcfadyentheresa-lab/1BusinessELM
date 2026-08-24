@@ -489,6 +489,39 @@ conversation for once the core is solid.
    project's estimate." Lint/tsc clean on all changed files (no new issues
    vs. baseline).
 
+   **Follow-up (2026-08-23)**: raised again — should the card link to
+   something more concrete? Full QuickBooks integration was considered and
+   deliberately parked (see `QUICKBOOKS_INTEGRATION.md` — genuinely
+   confirmed this business creates real client estimates through
+   QuickBooks today, but that's a separate, much larger project). The
+   smaller real win shipped instead: `attach_estimate_document(p_estimate_id,
+   p_title, p_url, p_type)`
+   (`supabase/migrations/20260823180000_attach_document_to_estimate.sql`)
+   lets admin attach a document (e.g. a signed proposal PDF) to an estimate
+   from a new "Client document" card on `CostEstimator.tsx`, reusing the
+   existing `documents` table/`project-assets` bucket rather than building
+   new upload plumbing - that table's RLS, and the bucket's public-PDF
+   support, already existed. `SECURITY DEFINER` because attaching normally
+   happens *after* approval/lock, which the plain `project_estimates`
+   UPDATE policy (status = 'draft' only) would otherwise block - this
+   function only ever touches `document_id`, nothing the lock protects.
+   `get_client_estimate_summary` now also returns `document_title`/
+   `document_url` (looked up inside the function itself, so the client
+   never needs direct `documents` table access for this), and the "Your
+   Estimate" card links to it when present.
+
+   **Verified**: 3 new tests (44 total across the suite) covering a
+   successful attach bypassing the draft-only lock, the client summary
+   correctly surfacing the attached document, and non-admin rejection.
+   Live in production (rolled back): attaching a document to project 4's
+   actual approved estimate and reading it back through
+   `get_client_estimate_summary` returned the exact title/URL attached;
+   a fabricated identity was correctly rejected with "Only admins can
+   attach an estimate document." `npm run build` (the real production
+   build command) verified clean throughout - see item 15 below for why
+   that check exists at all now. Lint/tsc clean, no new issues vs.
+   baseline.
+
 **Reliability (§7) — the app's owner wants to work through this whole group
 before trusting the estimate piece completely. Starting with #9.**
 9. ~~**Fix the Save flow (§7a/§7b)**~~ — **✅ FIXED (2026-08-20)**. New
@@ -670,3 +703,22 @@ before trusting the estimate piece completely. Starting with #9.**
     exactly where `TENANCY_AUDIT.md` already put it: real but not urgent,
     revisit when a second business is actually on the table, at which point
     plugin-vs-standalone becomes the next question to answer.
+15. ~~**Fix the broken production build**~~ — **✅ FIXED (2026-08-23)**.
+    Found by accident while chasing a Bolt/GitHub deploy-sync question: a
+    Railway deployment (auto-building this repo on every push to `main`,
+    entirely separate from the app's actual Bolt-hosted production, and
+    since confirmed to be trial-expired/offline and not what serves the
+    real domain) had been failing on *every single build for 4 days* -
+    `npm run build` (`tsc -b && vite build`) was broken. Root cause:
+    `CostEstimator.tsx` queries `estimate_status_history` directly (added
+    with the approve/unlock feature, item 4/§1), but that table was never
+    added to `database.types.ts` - `tsc -b` failed with "No overload
+    matches this call" on the `.from()` call. Fixed by adding the missing
+    table type. Confirmed locally: `npm run build` now completes cleanly
+    and produces the expected chunks for every page, including the ones
+    changed most recently. Worth remembering: this class of bug - a real
+    table the frontend queries, missing from the hand-maintained types file
+    - won't be caught by `vitest`/the PGlite harness (which talks to
+    Postgres directly, not through the Supabase JS client's generated
+    types), only by actually running the build. No automated safeguard
+    added for this specific gap; noting it here as the known blind spot.
