@@ -161,6 +161,42 @@ describe("save_estimate", () => {
     });
   });
 
+  it("rejects a garbage markup percentage", async () => {
+    const { estimateId } = await seedDraftEstimate(db);
+    await asUser(db, ADMIN, async () => {
+      await expect(
+        db.query(`select public.save_estimate($1,$2,$3,$4,$5,$6,$7::jsonb)`, [
+          estimateId, true, "abc", "0", false, "0",
+          JSON.stringify([{ quantity: "1", unit_type: "sq_ft", unit_cost: "1", material_cost: "0" }]),
+        ])
+      ).rejects.toThrow(/contingency, markup, and management fee/i);
+    });
+  });
+
+  it("rejects a negative contingency percentage", async () => {
+    const { estimateId } = await seedDraftEstimate(db);
+    await asUser(db, ADMIN, async () => {
+      await expect(
+        db.query(`select public.save_estimate($1,$2,$3,$4,$5,$6,$7::jsonb)`, [
+          estimateId, false, "0", "-10", false, "0",
+          JSON.stringify([{ quantity: "1", unit_type: "sq_ft", unit_cost: "1", material_cost: "0" }]),
+        ])
+      ).rejects.toThrow(/contingency, markup, and management fee/i);
+    });
+  });
+
+  it("allows empty-string percentages (falls back to 0 downstream)", async () => {
+    const { estimateId } = await seedDraftEstimate(db);
+    await asUser(db, ADMIN, async () => {
+      await db.query(`select public.save_estimate($1,$2,$3,$4,$5,$6,$7::jsonb)`, [
+        estimateId, true, "", "", false, "",
+        JSON.stringify([{ quantity: "1", unit_type: "sq_ft", unit_cost: "1", material_cost: "0" }]),
+      ]);
+      const estimate = await db.query(`select markup_percent, contingency_percent, management_fee_percent from public.project_estimates where id = $1`, [estimateId]);
+      expect(estimate.rows[0]).toEqual({ markup_percent: "", contingency_percent: "", management_fee_percent: "" });
+    });
+  });
+
   it("allows empty-string quantity/cost fields (a placeholder item)", async () => {
     const { estimateId } = await seedDraftEstimate(db);
     await asUser(db, ADMIN, async () => {

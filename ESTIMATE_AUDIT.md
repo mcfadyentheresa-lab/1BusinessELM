@@ -722,3 +722,69 @@ before trusting the estimate piece completely. Starting with #9.**
     Postgres directly, not through the Supabase JS client's generated
     types), only by actually running the build. No automated safeguard
     added for this specific gap; noting it here as the known blind spot.
+16. ~~**Validate the markup/contingency/management fee percentages**~~ —
+    **✅ FIXED (2026-08-24)**. Found during a full audit requested by the
+    app's owner ("ensure the estimate area is thoroughly audited with no
+    bugs"): item 10's validation only ever covered per-item quantity/
+    unit_cost/material_cost - the three top-level percentage fields
+    (`contingency_percent`, `markup_percent`, `management_fee_percent`)
+    had zero validation anywhere. No `sanitizeNumericInput` client-side
+    (unlike every line-item field), and no check in `save_estimate`.
+
+    This was worse than a display glitch: `get_client_estimate_summary`
+    casts these three fields directly to `numeric` to compute the client-
+    facing total - garbage text saved into any of them would make that
+    cast throw a hard Postgres error, breaking the client's estimate view
+    entirely rather than just showing a wrong number. On the admin side,
+    `computeEstimateTotals` used a raw `parseFloat()` with no NaN guard,
+    reproducing the exact §7d/item 11 total-goes-to-$0.00 bug for a
+    different set of fields after that bug was supposedly closed.
+
+    Fixed at all three layers, matching the existing item 10/11 pattern
+    exactly: `computeEstimateTotals` now uses the same NaN-safe parsing as
+    `calcItemTotal`; the three percentage `<Input>`s in `CostEstimator.tsx`
+    now go through `sanitizeNumericInput`; and `save_estimate`
+    (`supabase/migrations/20260824130000_validate_estimate_percentage_fields.sql`)
+    now rejects the whole save if any of the three isn't empty-or-a-valid-
+    non-negative-number, inside the same atomic transaction as the rest of
+    the save.
+
+    **Verified**: 4 new tests (48 total across the suite, all passing) -
+    a regression test reproducing the exact NaN-total bug for these fields,
+    plus save_estimate rejection tests for a garbage markup percentage and
+    a negative contingency percentage, and a test confirming empty-string
+    percentages still save correctly. Live in production (rolled back): a
+    garbage markup percentage was correctly rejected with "Contingency,
+    markup, and management fee percentages must be non-negative numbers,"
+    and valid percentages saved correctly. `npm run build` and lint/tsc
+    clean, no new issues vs. baseline.
+
+**Also found and fixed in this pass, smaller in scope:**
+- `estimate-auditor`'s duplicate-line-item check skipped every custom-
+  category item entirely (`if (item.category_id === null) continue`) -
+  two identical custom entries in the same room were never flagged.
+  Fixed to group by category identity (category_id, or the normalized
+  custom_category text) rather than requiring a standard category.
+- 5 `catch (e: any) { ...e.message }` blocks in `CostEstimator.tsx`
+  (`handleRename`, `handleAudit`, `handleClientReview`, the ignore-warning
+  mutation's `onError`, `handleGenerateDraft`) used unchecked `e.message`
+  access on an `any`-typed catch variable - `handleRename` in particular
+  had apparently been missed when this exact pattern was fixed everywhere
+  else earlier in this engagement. All converted to the safe
+  `e instanceof Error` pattern used consistently elsewhere. Net lint
+  improvement: -5 `no-explicit-any` errors, zero regressions.
+- Three stale Muskoka `regional_modifiers` values corrected against
+  primary sources: the CRA's 2026 mileage rate ($0.65/km → $0.73/km), the
+  Town of Huntsville's building permit fee (was $12.50/$1,000 min $150,
+  the Town's own page says $11.00/$1,000 min $125), and the Township of
+  Muskoka Lakes' permit minimum (was a flat $120 with no real basis; the
+  Township's own Schedule "H" gives $1.55/sq ft of finished floor area or
+  $200, whichever is greater - the $11.00/$1,000 rate itself was already
+  correct). Full sourcing and reasoning in
+  `supabase/migrations/20260824120000_correct_stale_regional_modifiers.sql`.
+  The other 5 modifiers (surcharge percentages, per diem) and all of
+  `market_rates` are dated 2024-01-01 and equally stale, but aren't
+  corrected here: they're business judgment calls / contractor labour
+  rates with no single authoritative source to verify against, unlike a
+  published government fee schedule - worth the app owner's own periodic
+  review rather than a web search standing in for their pricing judgment.

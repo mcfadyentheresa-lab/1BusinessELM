@@ -1274,7 +1274,7 @@ export default function CostEstimator() {
             <div>
               <p className="text-xs text-muted-foreground mb-1.5">Contingency</p>
               <div className="flex items-center gap-1">
-                <Input className="h-7 w-16 text-xs" value={contingencyPct} onChange={(e) => setContingencyPct(e.target.value)} disabled={isLocked} />
+                <Input className="h-7 w-16 text-xs" value={contingencyPct} onChange={(e) => setContingencyPct(sanitizeNumericInput(e.target.value))} inputMode="decimal" disabled={isLocked} />
                 <span className="text-xs text-muted-foreground">%</span>
               </div>
             </div>
@@ -1297,7 +1297,7 @@ export default function CostEstimator() {
                 <Switch checked={markupEnabled} onCheckedChange={setMarkupEnabled} disabled={isLocked} className="scale-75 origin-left" />
               </div>
               <div className="flex items-center gap-1">
-                <Input className="h-7 w-16 text-xs" value={markupPct} onChange={(e) => setMarkupPct(e.target.value)} disabled={!markupEnabled || isLocked} />
+                <Input className="h-7 w-16 text-xs" value={markupPct} onChange={(e) => setMarkupPct(sanitizeNumericInput(e.target.value))} inputMode="decimal" disabled={!markupEnabled || isLocked} />
                 <span className="text-xs text-muted-foreground">%</span>
               </div>
             </div>
@@ -1310,7 +1310,7 @@ export default function CostEstimator() {
                 <Switch checked={managementFeeEnabled} onCheckedChange={setManagementFeeEnabled} disabled={isLocked} className="scale-75 origin-left" />
               </div>
               <div className="flex items-center gap-1">
-                <Input className="h-7 w-16 text-xs" value={managementFeePct} onChange={(e) => setManagementFeePct(e.target.value)} disabled={!managementFeeEnabled || isLocked} />
+                <Input className="h-7 w-16 text-xs" value={managementFeePct} onChange={(e) => setManagementFeePct(sanitizeNumericInput(e.target.value))} inputMode="decimal" disabled={!managementFeeEnabled || isLocked} />
                 <span className="text-xs text-muted-foreground">%</span>
               </div>
             </div>

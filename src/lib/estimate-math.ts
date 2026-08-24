@@ -58,11 +58,11 @@ export interface EstimateTotals {
 
 export function computeEstimateTotals(items: LineItem[], options: EstimateTotalsOptions): EstimateTotals {
   const subtotal = items.reduce((s, item) => s + calcItemTotal(item), 0);
-  const contingency = subtotal * (parseFloat(options.contingencyPct || "0") / 100);
+  const contingency = subtotal * (safeNumber(options.contingencyPct) / 100);
   const subtotalWithContingency = subtotal + contingency;
-  const markup = options.markupEnabled ? subtotalWithContingency * (parseFloat(options.markupPct || "0") / 100) : 0;
+  const markup = options.markupEnabled ? subtotalWithContingency * (safeNumber(options.markupPct) / 100) : 0;
   const subtotalWithMarkup = subtotalWithContingency + markup;
-  const managementFee = options.managementFeeEnabled ? subtotalWithMarkup * (parseFloat(options.managementFeePct || "0") / 100) : 0;
+  const managementFee = options.managementFeeEnabled ? subtotalWithMarkup * (safeNumber(options.managementFeePct) / 100) : 0;
   const total = subtotalWithMarkup + managementFee;
   return { subtotal, contingency, subtotalWithContingency, markup, subtotalWithMarkup, managementFee, total };
 }

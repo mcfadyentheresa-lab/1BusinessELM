@@ -149,4 +149,26 @@ describe("computeEstimateTotals", () => {
     expect(Number.isNaN(result.total)).toBe(false);
     expect(result.total).toBe(250);
   });
+
+  it("treats a garbage contingency/markup/management fee percentage as 0 instead of NaN", () => {
+    // Regression: unlike line items, these three top-level fields had zero
+    // validation anywhere (no sanitizeNumericInput client-side, no check in
+    // save_estimate) - a raw parseFloat() on a bad value reproduced the
+    // exact §7d/item 11 NaN-total bug for a different set of fields after
+    // that bug was supposedly closed for line items.
+    const result = computeEstimateTotals(items, {
+      contingencyPct: "abc",
+      markupEnabled: true,
+      markupPct: ".",
+      managementFeeEnabled: true,
+      managementFeePct: "-5",
+    });
+
+    expect(result.subtotal).toBe(450);
+    expect(Number.isNaN(result.contingency)).toBe(false);
+    expect(Number.isNaN(result.markup)).toBe(false);
+    expect(Number.isNaN(result.managementFee)).toBe(false);
+    expect(Number.isNaN(result.total)).toBe(false);
+    expect(result.total).toBe(450);
+  });
 });
