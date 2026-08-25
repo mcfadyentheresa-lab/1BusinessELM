@@ -1291,7 +1291,7 @@ export default function CostEstimator() {
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-xs text-xs">
-                    25% default markup is consistent with sustainable blended markup ranges (20%-35%) documented for small, high-touch Muskoka renovation builders. Source: Muskoka builder markup research, 2026.
+                    25% default sits within blended markup ranges (20%-35%) documented for small, high-touch Muskoka renovation builders. Some trade publications cite sustainable ranges running notably higher (up to ~45-50%) — treat 25% as a reasonable starting point, not a ceiling. Source: Muskoka builder markup research, 2026; Canadian Contractor magazine.
                   </TooltipContent>
                 </Tooltip>
                 <Switch checked={markupEnabled} onCheckedChange={setMarkupEnabled} disabled={isLocked} className="scale-75 origin-left" />
