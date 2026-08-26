@@ -90,6 +90,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { usePlanningBoards, useCreatePlanningBoard, useDeletePlanningBoard, useUpdatePlanningBoard, useUploadImage, useUsers, useProjects, useMilestones, useChecklistItems, useCalendarEvents, useUpdateCalendarEvent, useDeleteCalendarEvent, useCreateCalendarEvent, useCreateMilestone, useCreateChecklistItem, useSuggestedCategories } from "@/hooks/use-projects";
 import { useRecentProjects } from "@/hooks/use-recent-projects";
+import type { BoardSnapshot } from "@/hooks/use-projects";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -104,7 +105,7 @@ import { recognizeAllShapes, recognizeShape, looksLikeHandwriting } from "@/lib/
 import type { CanvasElement, PlanningBoard as PlanningBoardType, PaintColor, Json } from "@/shared/database.types";
 import { queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
-import { loadCanvasElements, createCanvasElement, updateCanvasElement, deleteCanvasElement } from "@/lib/canvas-api";
+import { loadCanvasElements, createCanvasElement, updateCanvasElement, deleteCanvasElement, reconcileCanvasElements } from "@/lib/canvas-api";
 import { createMockupElements, deleteMockupElements, MOCKUP_VARIANT_COUNT } from "@/lib/mockup-generator";
 import { supabase } from "@/lib/supabase";
 
@@ -1409,9 +1410,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       const baseContent: any = { ...def.content, ...(step.patch || {}) };
       try {
         const el = await createCanvasElement(selectedBoardId, { type: persistedType, x, y, width: def.width, height: def.height, z_index: maxZ, content: baseContent });
+        pushUndo();
         addElement(el);
         sendElementAdd(el);
-        pushUndo();
         setMaxZ((z) => z + 1);
       } catch {
         toast({ title: "Error", description: "Failed to apply template", variant: "destructive" });
@@ -1589,9 +1590,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
 
     try {
       const el = await createCanvasElement(selectedBoardId, { type: persistedType, x: centerX, y: centerY, width: sized.width, height: sized.height, z_index: newZ, content: baseContent });
+      pushUndo();
       addElement(el);
       sendElementAdd(el);
-      pushUndo();
     } catch {
       toast({ title: "Error", description: "Failed to create element", variant: "destructive" });
     }
@@ -1621,9 +1622,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     }
     try {
       const el = await createCanvasElement(selectedBoardId, { type: "link", x: placedX, y: placedY, width: def.width, height: def.height, z_index: newZ, content: baseContent });
+      pushUndo();
       addElement(el);
       sendElementAdd(el);
-      pushUndo();
       setTimeout(() => unfurlLink(el.id, url.trim()), 0);
       return el.id as number;
     } catch {
@@ -1654,9 +1655,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     const baseContent: any = { ...def.content, text: trimmed };
     try {
       const el = await createCanvasElement(selectedBoardId, { type: "text", x: placedX, y: placedY, width: def.width, height: autoHeight, z_index: newZ, content: baseContent });
+      pushUndo();
       addElement(el);
       sendElementAdd(el);
-      pushUndo();
       return el.id as number;
     } catch {
       toast({ title: "Error", description: "Failed to add note", variant: "destructive" });
@@ -1683,9 +1684,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     }
     try {
       const el = await createCanvasElement(selectedBoardId, { type: "image", x: placedX, y: placedY, width: def.width, height: def.height, z_index: newZ, content: baseContent });
+      pushUndo();
       addElement(el);
       sendElementAdd(el);
-      pushUndo();
     } catch {
       toast({ title: "Error", description: "Failed to add image", variant: "destructive" });
     }
@@ -1714,9 +1715,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         z_index: newZ,
         content: hardwareContent,
       });
+      pushUndo();
       addElement(el);
       sendElementAdd(el);
-      pushUndo();
       toast({ title: "Hardware added", description: draft.name });
     } catch {
       toast({ title: "Error", description: "Failed to add hardware", variant: "destructive" });
@@ -1782,9 +1783,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
           z_index: baseZ + i,
           content,
         });
+        pushUndo();
         addElement(el);
         sendElementAdd(el);
-        pushUndo();
         added++;
       } catch {
         // Continue dropping the rest; we'll surface a partial-success toast at the end.
@@ -1807,9 +1808,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     const content: ConnectorContent = { fromId, toId, style: "arrow", curve: "curved" };
     try {
       const el = await createCanvasElement(selectedBoardId, { type: "connector", x: 0, y: 0, width: 0, height: 0, z_index: 0, content: content as unknown as Json });
+      pushUndo();
       addElement(el);
       sendElementAdd(el);
-      pushUndo();
       setSelectedConnectorId(el.id);
     } catch {
       toast({ title: "Error", description: "Failed to create connector", variant: "destructive" });
@@ -1999,9 +2000,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         z_index: newZ,
         content: { variant: "callout", text, color: "#fef9c3" },
       });
+      pushUndo();
       addElement(el);
       sendElementAdd(el);
-      pushUndo();
       return { ok: true };
     } catch {
       return { ok: false };
@@ -2319,19 +2320,41 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
 
   const handleUndo = useCallback(async () => {
     if (!selectedBoardId) return;
-    const prevElements = (() => {
-      const { undoStack } = useCanvasStore.getState();
-      return undoStack.length > 0 ? undoStack[undoStack.length - 1] : null;
-    })();
-    if (!prevElements) return;
+    const { undoStack } = useCanvasStore.getState();
+    if (undoStack.length === 0) return;
+    const target = Object.values(undoStack[undoStack.length - 1]);
     popUndo();
     try {
+      // popUndo() only reverted local state — the mutation being undone was
+      // already persisted to canvas_elements by whatever handler pushed this
+      // snapshot, so the server has to be reconciled to match `target` too,
+      // or the refresh below would just pull the un-undone row right back.
+      await reconcileCanvasElements(selectedBoardId, target);
       await refreshCanvasFromServer();
       toast({ title: "Undone" });
-    } catch {
-      toast({ title: "Couldn't undo", variant: "destructive" });
+    } catch (err) {
+      console.error("[Board] Failed to undo", err);
+      toast({ title: "Couldn't undo", description: "The change may not have been reverted on the server.", variant: "destructive" });
     }
   }, [selectedBoardId]);
+
+  // Restoring a snapshot only ever wrote its element array into
+  // planning_boards.canvas_data, a column nothing renders from — the board
+  // reads exclusively from canvas_elements. This reconciles the server's
+  // canvas_elements to match the snapshot before refreshing, same pattern
+  // as handleUndo above.
+  const handleRestoreSnapshot = useCallback(async (snapshot: BoardSnapshot) => {
+    if (!selectedBoardId) return;
+    const els: CanvasElement[] = (snapshot.canvas_data as any)?.elements ?? [];
+    try {
+      await reconcileCanvasElements(selectedBoardId, els);
+      await refreshCanvasFromServer();
+      toast({ title: "Version restored" });
+    } catch (err) {
+      console.error("[Board] Failed to restore version", err);
+      toast({ title: "Restore failed", description: "The board may be partially reverted. Refresh to check.", variant: "destructive" });
+    }
+  }, [selectedBoardId, refreshCanvasFromServer]);
 
   // Unified action dispatcher used by the Add palette, mobile bar, and shortcuts.
   // "image" / "connect" arm a placement cursor or open a dialog; everything else
@@ -4423,9 +4446,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         z_index: newZ,
         content,
       });
+      pushUndo();
       addElement(el);
       sendElementAdd(el);
-      pushUndo();
       persistActiveRoom(payload.name);
       // Pin the new room at the end of the saved order if we already have one.
       if (savedRoomOrder.length > 0 && !savedRoomOrder.includes(payload.name)) {
@@ -7576,11 +7599,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
             <VersionsPopover
               boardId={selectedBoardId}
               currentElements={Object.values(elements) as CanvasElement[]}
-              onRestore={(snapshot) => {
-                const els: CanvasElement[] = (snapshot.canvas_data as any)?.elements ?? [];
-                setElements(els);
-                refreshCanvasFromServer();
-              }}
+              onRestore={handleRestoreSnapshot}
               onCompare={(snapshot) => setCompareSnapshotId(snapshot.id)}
             >
               <span
@@ -7899,9 +7918,9 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                       content: baseContent,
                     })
                       .then((el) => {
+                        pushUndo();
                         addElement(el);
                         sendElementAdd(el);
-                        pushUndo();
                       })
                       .catch(() => {
                         toast({ title: "Error", description: "Failed to add paint from library", variant: "destructive" });
@@ -9242,10 +9261,8 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
           boardId={selectedBoardId}
           currentElements={Object.values(elements) as CanvasElement[]}
           onRestore={(snapshot) => {
-            const els: CanvasElement[] = (snapshot.canvas_data as any)?.elements ?? [];
-            setElements(els);
+            handleRestoreSnapshot(snapshot);
             setCompareSnapshotId(null);
-            refreshCanvasFromServer();
           }}
         />
       )}
