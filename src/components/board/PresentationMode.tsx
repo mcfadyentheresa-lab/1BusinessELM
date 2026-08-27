@@ -4,8 +4,9 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { X, ChevronLeft, ChevronRight, Share2, Copy, Check, Loader2 } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, Link2, Copy, Check, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface PresentationModeProps {
   projectId: number;
@@ -184,7 +185,7 @@ export function PresentationMode({ projectId, boardId, onClose }: PresentationMo
       const link = `${window.location.origin}/p/${token}`;
       await navigator.clipboard.writeText(link);
       setCopied(true);
-      toast({ title: "Share link copied to clipboard" });
+      toast({ title: "Client link copied to clipboard", description: "This link shows a polished project summary, not this slideshow." });
       setTimeout(() => setCopied(false), 3000);
     } catch (e: any) {
       toast({ title: "Failed to generate link", description: e.message, variant: "destructive" });
@@ -213,22 +214,27 @@ export function PresentationMode({ projectId, boardId, onClose }: PresentationMo
           <span className="text-white/40 text-xs font-sans tabular-nums">
             {slide + 1} / {totalSlides}
           </span>
-          <Button
-            variant="outline"
-            size="sm"
-            className="bg-white/10 border-white/20 text-white hover:bg-white/20 gap-1.5 font-sans"
-            onClick={generateShareLink}
-            disabled={generatingLink || !board?.id}
-          >
-            {generatingLink ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : copied ? (
-              <Check className="h-3.5 w-3.5" />
-            ) : (
-              <Share2 className="h-3.5 w-3.5" />
-            )}
-            Share
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-white/10 border-white/20 text-white hover:bg-white/20 gap-1.5 font-sans"
+                onClick={generateShareLink}
+                disabled={generatingLink || !board?.id}
+              >
+                {generatingLink ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : copied ? (
+                  <Check className="h-3.5 w-3.5" />
+                ) : (
+                  <Link2 className="h-3.5 w-3.5" />
+                )}
+                Copy client link
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Generates a polished project summary page — not this slideshow view.</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
