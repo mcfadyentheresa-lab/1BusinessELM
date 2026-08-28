@@ -10,6 +10,11 @@ interface CanvasState {
   loading: boolean;
   undoStack: ElementsMap[];
   compareIds: number[];
+  // Set by runPositionSave when a drag/resize position update fails to
+  // persist. `at` is a fresh timestamp on every failure (even repeats of the
+  // same message) so a component's useEffect keyed on this value always
+  // re-fires and can surface a toast — the store has no UI of its own.
+  lastSaveError: { message: string; at: number } | null;
   setBoardId: (id: number | null) => void;
   setElements: (els: CanvasElement[]) => void;
   addElement: (el: CanvasElement) => void;
@@ -31,6 +36,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   loading: false,
   undoStack: [],
   compareIds: [],
+  lastSaveError: null,
   setBoardId: (id) => set({ boardId: id }),
   setElements: (els) => {
     const map: ElementsMap = {};
@@ -88,8 +94,23 @@ async function runPositionSave(boardId: number) {
     height: Math.round(el.height ?? 0),
     z_index: Math.round(el.z_index),
   }));
+  let failed = 0;
   for (const u of updates) {
-    await supabase.from("canvas_elements").update({ x: u.x, y: u.y, width: u.width, height: u.height, z_index: u.z_index }).eq("id", u.id);
+    const { error } = await supabase.from("canvas_elements").update({ x: u.x, y: u.y, width: u.width, height: u.height, z_index: u.z_index }).eq("id", u.id);
+    if (error) {
+      failed += 1;
+      console.error("[Board] Failed to save element position", u.id, error);
+    }
+  }
+  if (failed > 0) {
+    useCanvasStore.setState({
+      lastSaveError: {
+        message: failed === 1
+          ? "An element's position wasn't saved."
+          : `${failed} element positions weren't saved.`,
+        at: Date.now(),
+      },
+    });
   }
 }
 
@@ -103,22 +124,20 @@ export function debouncedSavePositions(boardId: number, delay = 1500) {
   }, delay);
 }
 
-export function cancelPendingSave() {
-  if (saveTimer) {
-    clearTimeout(saveTimer);
-    saveTimer = null;
-    pendingSaveBoardId = null;
-  }
-}
-
-function flushPendingSave() {
+// Immediately runs any pending debounced save instead of discarding it —
+// used when navigating away from a board (switching boards, creating a new
+// one) so the last ~1.5s of drag/resize edits aren't silently lost. Reads
+// the board id it was scheduled against, so it stays correctly targeted
+// even after the caller has already moved on to a different board.
+export function flushPendingSave(): Promise<void> {
   if (saveTimer && pendingSaveBoardId !== null) {
     clearTimeout(saveTimer);
     saveTimer = null;
     const boardId = pendingSaveBoardId;
     pendingSaveBoardId = null;
-    void runPositionSave(boardId);
+    return runPositionSave(boardId);
   }
+  return Promise.resolve();
 }
 
 if (typeof window !== "undefined") {

@@ -93,7 +93,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import CalendarPanel from "@/components/CalendarPanel";
-import { useCanvasStore, debouncedSavePositions, cancelPendingSave } from "@/stores/canvas-store";
+import { useCanvasStore, debouncedSavePositions, flushPendingSave } from "@/stores/canvas-store";
 import { isTextHeading, isPaintSurface } from "@/lib/board-element-migration";
 import { useBoardRealtime } from "@/hooks/use-board-realtime";
 import { useAuth } from "@/hooks/use-auth";
@@ -999,6 +999,15 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
 
   const elements = useCanvasStore((s) => s.elements);
   const loading = useCanvasStore((s) => s.loading);
+  const lastSaveError = useCanvasStore((s) => s.lastSaveError);
+  // debouncedSavePositions previously failed silently — this is the only
+  // place a failed drag/resize save becomes visible to the user. Keyed on
+  // `at` (a fresh timestamp per failure) so repeats of the same message
+  // still re-fire the toast.
+  useEffect(() => {
+    if (!lastSaveError) return;
+    toast({ title: "Save failed", description: lastSaveError.message, variant: "destructive" });
+  }, [lastSaveError, toast]);
   const { setElements, addElement, updateElement, removeElement, moveElement, setLoading, setBoardId, pushUndo, popUndo } = useCanvasStore.getState();
   const undoStack = useCanvasStore((s) => s.undoStack);
   // Compare drawer state — `compareIds` is reactive, the actions are pulled
@@ -1084,11 +1093,12 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
 
   useEffect(() => {
     if (!selectedBoardId) return;
-    // Drop any pending debounced position save scheduled against the
-    // previous board before we change the active boardId. Without this,
-    // a save queued for board A could fire after we switch to board B
-    // and silently PATCH the wrong board's positions endpoint.
-    cancelPendingSave();
+    // Flush (not discard) any pending debounced position save scheduled
+    // against the previous board before we change the active boardId. It
+    // stays correctly targeted at the old board even after we switch, so
+    // this can't cross-contaminate board B — but discarding it outright
+    // used to silently drop the last ~1.5s of drag/resize edits.
+    flushPendingSave();
     setBoardId(selectedBoardId);
     setLoading(true);
     // CRITICAL: clear elements immediately when switching boards. Without
@@ -1140,12 +1150,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   };
 
   const handleCreateBoard = async () => {
-    // Cancel any in-flight debounced save against the current board
-    // before we kick off the create. Once the new board is selected, a
-    // late save for the old board would either no-op (good) or, in a
-    // worst case race, PATCH the wrong board's positions URL. Cheap to
-    // be safe.
-    cancelPendingSave();
+    // Flush any in-flight debounced save against the current board before
+    // we kick off the create — it's still correctly targeted at that board
+    // even after we switch away, so this can't race the new board's data.
+    await flushPendingSave();
     try {
       const boardName = newBoardName.trim() || "Untitled Board";
       const boardResult = await createBoard({
