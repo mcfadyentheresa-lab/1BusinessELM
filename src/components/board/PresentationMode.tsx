@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { X, ChevronLeft, ChevronRight, Link2, Copy, Check, Loader2 } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, Link2, Copy, Check, Loader2, ListChecks, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 interface PresentationModeProps {
   projectId: number;
@@ -32,7 +33,9 @@ export function PresentationMode({ projectId, boardId, onClose }: PresentationMo
   const [slide, setSlide] = useState(0);
   const [copied, setCopied] = useState(false);
   const [generatingLink, setGeneratingLink] = useState(false);
+  const [revokingId, setRevokingId] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
 
   const { data: project } = useQuery({
     queryKey: ["project", projectId],
@@ -65,6 +68,20 @@ export function PresentationMode({ projectId, boardId, onClose }: PresentationMo
         .maybeSingle();
       return data;
     },
+  });
+
+  const { data: shareTokens } = useQuery({
+    queryKey: ["board-presentation-tokens", board?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("board_presentation_tokens")
+        .select("id, token, created_at, expires_at")
+        .eq("board_id", board!.id)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!board?.id,
   });
 
   const { data: canvasElements } = useQuery({
@@ -187,10 +204,25 @@ export function PresentationMode({ projectId, boardId, onClose }: PresentationMo
       setCopied(true);
       toast({ title: "Client link copied to clipboard", description: "This link shows a polished project summary, not this slideshow." });
       setTimeout(() => setCopied(false), 3000);
+      queryClient.invalidateQueries({ queryKey: ["board-presentation-tokens", board?.id] });
     } catch (e: any) {
       toast({ title: "Failed to generate link", description: e.message, variant: "destructive" });
     }
     setGeneratingLink(false);
+  };
+
+  const revokeToken = async (id: number) => {
+    setRevokingId(id);
+    try {
+      const { error } = await supabase.from("board_presentation_tokens").delete().eq("id", id);
+      if (error) throw error;
+      toast({ title: "Link revoked", description: "That link no longer works." });
+      queryClient.invalidateQueries({ queryKey: ["board-presentation-tokens", board?.id] });
+    } catch (e: any) {
+      toast({ title: "Failed to revoke link", description: e.message, variant: "destructive" });
+    } finally {
+      setRevokingId(null);
+    }
   };
 
   return (
@@ -235,6 +267,56 @@ export function PresentationMode({ projectId, boardId, onClose }: PresentationMo
             </TooltipTrigger>
             <TooltipContent>Generates a polished project summary page — not this slideshow view.</TooltipContent>
           </Tooltip>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-white/10 border-white/20 text-white hover:bg-white/20 gap-1.5 font-sans px-2.5"
+                disabled={!board?.id}
+                aria-label="Manage client links"
+                data-testid="button-manage-client-links"
+              >
+                <ListChecks className="h-3.5 w-3.5" />
+                {!!shareTokens?.length && (
+                  <span className="text-[11px] font-mono">{shareTokens.length}</span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-80 font-sans" data-testid="popover-client-links">
+              <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Client links</div>
+              {!shareTokens?.length ? (
+                <p className="text-sm text-muted-foreground py-1">No links generated yet.</p>
+              ) : (
+                <div className="space-y-1 max-h-64 overflow-y-auto">
+                  {shareTokens.map((t) => {
+                    const expired = !!t.expires_at && new Date(t.expires_at) < new Date();
+                    return (
+                      <div key={t.id} className="flex items-center justify-between gap-2 py-1.5 border-b border-border/60 last:border-0">
+                        <div className="text-xs leading-tight">
+                          <div>{t.created_at ? new Date(t.created_at).toLocaleDateString() : "—"}</div>
+                          <div className={expired ? "text-destructive" : "text-muted-foreground"}>
+                            {expired ? "Expired" : t.expires_at ? `Expires ${new Date(t.expires_at).toLocaleDateString()}` : "No expiry"}
+                          </div>
+                        </div>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
+                          onClick={() => revokeToken(t.id)}
+                          disabled={revokingId === t.id}
+                          aria-label="Revoke link"
+                          data-testid={`button-revoke-token-${t.id}`}
+                        >
+                          {revokingId === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 
