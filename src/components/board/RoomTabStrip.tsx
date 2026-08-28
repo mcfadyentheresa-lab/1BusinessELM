@@ -15,8 +15,6 @@ import {
   Pencil,
   Trash2,
   GripHorizontal,
-  FileText,
-  Sparkles,
   DollarSign,
 } from "lucide-react";
 import type { CanvasElement } from "@/shared/database.types";
@@ -42,8 +40,6 @@ interface RoomTabStripProps {
   onAddRoom: (name: string) => void;
   onRenameRoom: (oldName: string, newName: string) => void;
   onDeleteRoom: (name: string) => void;
-  onRenderRoom?: (room: string) => void;
-  onExportSpec?: (room: string) => void;
   inline?: boolean;
 }
 
@@ -72,8 +68,6 @@ export function RoomTabStrip({
   onAddRoom,
   onRenameRoom,
   onDeleteRoom,
-  onRenderRoom,
-  onExportSpec,
   inline = false,
 }: RoomTabStripProps) {
   const [addingRoom, setAddingRoom] = useState(false);
@@ -212,16 +206,6 @@ export function RoomTabStrip({
                   <DropdownMenuItem onClick={() => { setEditingRoom(room); setEditName(room); }}>
                     <Pencil className="h-3.5 w-3.5 mr-2" />Rename
                   </DropdownMenuItem>
-                  {onRenderRoom && (
-                    <DropdownMenuItem onClick={() => onRenderRoom(room)}>
-                      <Sparkles className="h-3.5 w-3.5 mr-2" />AI Render
-                    </DropdownMenuItem>
-                  )}
-                  {onExportSpec && (
-                    <DropdownMenuItem onClick={() => onExportSpec(room)}>
-                      <FileText className="h-3.5 w-3.5 mr-2" />Export spec
-                    </DropdownMenuItem>
-                  )}
                   <DropdownMenuItem
                     onClick={() => onDeleteRoom(room)}
                     className="text-destructive focus:text-destructive"

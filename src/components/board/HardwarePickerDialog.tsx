@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Link2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export type HardwareCategory = "knob" | "pull" | "faucet" | "hinge" | "sconce" | "pendant" | "handle" | "other";
@@ -39,9 +38,6 @@ interface Props {
 
 export default function HardwarePickerDialog({ open, onOpenChange, onSubmit }: Props) {
   const { toast } = useToast();
-  const [tab, setTab] = useState<"url" | "manual">("url");
-  const [urlInput, setUrlInput] = useState("");
-  const [unfurling, setUnfurling] = useState(false);
   const [draft, setDraft] = useState<HardwareDraft>({
     category: "pull",
     name: "",
@@ -51,46 +47,7 @@ export default function HardwarePickerDialog({ open, onOpenChange, onSubmit }: P
   const [submitting, setSubmitting] = useState(false);
 
   const reset = () => {
-    setUrlInput("");
     setDraft({ category: "pull", name: "", status: "idea", currency: "CAD" });
-    setTab("url");
-  };
-
-  const handleUnfurl = async () => {
-    const url = urlInput.trim();
-    if (!url) return;
-    setUnfurling(true);
-    try {
-      const res = await fetch("/api/board/unfurl-vendor", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast({ title: "Couldn't read that page", description: data?.message || "Try manual entry.", variant: "destructive" });
-        setTab("manual");
-        setDraft((d) => ({ ...d, vendorUrl: url }));
-        return;
-      }
-      setDraft((d) => ({
-        ...d,
-        name: data.title || d.name,
-        brand: data.siteName || d.brand,
-        imageUrl: data.image || d.imageUrl,
-        price: typeof data.price === "number" ? data.price : d.price,
-        currency: data.currency === "USD" ? "USD" : "CAD",
-        vendorUrl: data.sourceUrl || url,
-      }));
-      setTab("manual");
-    } catch {
-      toast({ title: "Network error", description: "Try again or use manual entry.", variant: "destructive" });
-      setTab("manual");
-      setDraft((d) => ({ ...d, vendorUrl: url }));
-    } finally {
-      setUnfurling(false);
-    }
   };
 
   const canSave = draft.name.trim().length > 0 && !!draft.category && !!draft.room;
@@ -132,35 +89,10 @@ export default function HardwarePickerDialog({ open, onOpenChange, onSubmit }: P
       <DialogContent className="max-w-md" data-testid="dialog-hardware-picker">
         <DialogHeader>
           <DialogTitle>Add hardware</DialogTitle>
-          <DialogDescription>Pull from a vendor URL, or enter the details by hand.</DialogDescription>
+          <DialogDescription>Enter the hardware details.</DialogDescription>
         </DialogHeader>
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as "url" | "manual")}>
-          <TabsList className="grid grid-cols-2 w-full">
-            <TabsTrigger value="url" data-testid="tab-hardware-url">From URL</TabsTrigger>
-            <TabsTrigger value="manual" data-testid="tab-hardware-manual">Manual entry</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="url" className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="hardware-url">Vendor URL</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="hardware-url"
-                  value={urlInput}
-                  onChange={(e) => setUrlInput(e.target.value)}
-                  placeholder="https://schoolhouse.com/products/..."
-                  data-testid="input-hardware-url"
-                />
-                <Button onClick={handleUnfurl} disabled={!urlInput.trim() || unfurling} data-testid="button-hardware-unfurl">
-                  {unfurling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
-                </Button>
-              </div>
-              <p className="text-[11px] text-muted-foreground">We'll pre-fill name, image, brand, and price where we can. You can edit anything before adding.</p>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="manual" className="space-y-3">
+        <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1.5">
                 <Label htmlFor="hardware-category">Category *</Label>
@@ -318,8 +250,7 @@ export default function HardwarePickerDialog({ open, onOpenChange, onSubmit }: P
                 data-testid="input-hardware-notes"
               />
             </div>
-          </TabsContent>
-        </Tabs>
+        </div>
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} data-testid="button-hardware-cancel">Cancel</Button>

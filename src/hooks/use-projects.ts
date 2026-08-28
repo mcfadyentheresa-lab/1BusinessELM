@@ -404,6 +404,19 @@ export function useDeletePhoto() {
   });
 }
 
+export function useUpdatePhoto() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, patch }: { id: number; projectId: number; patch: Partial<Pick<Photo, "url" | "caption" | "tags">> }) => {
+      const { error } = await supabase.from("photos").update(patch).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["/api/projects/:projectId/photos", vars.projectId] });
+    },
+  });
+}
+
 // ── Image upload ───────────────────────────────────────────────────────────
 
 export function useUploadImage() {

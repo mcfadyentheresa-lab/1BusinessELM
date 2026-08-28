@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { usePlanningBoards, usePhotos, useCreatePhoto, useDeletePhoto, useUploadImage } from "@/hooks/use-projects";
+import { useQueryClient } from "@tanstack/react-query";
+import { usePlanningBoards, usePhotos, useCreatePhoto, useDeletePhoto, useUpdatePhoto, useUploadImage } from "@/hooks/use-projects";
 import { Loader2, Layers, Plus, Palette, Shapes, Wrench, Armchair, Trash2, RefreshCw, Upload, FolderPlus, Check, X, CheckSquare, Square, Tag } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -61,29 +61,9 @@ const BUCKET_META: Record<Exclude<KindBucket, "all">, { label: string; icon: Rea
   photo: { label: "Photos", icon: Layers },
 };
 
-function useAllProjectElements(boards: any[]) {
-  const enabled = Array.isArray(boards) && boards.length > 0;
-  return useQuery({
-    queryKey: ["library-drawer", "all-elements", (boards || []).map((b: any) => b.id).sort().join(",")],
-    queryFn: async () => {
-      const results = await Promise.all(
-        (boards || []).map(async (b: any) => {
-          const res = await fetch(`/api/planning-boards/${b.id}/elements`, { credentials: "include" });
-          if (!res.ok) return [];
-          const elements: CanvasElementLike[] = await res.json();
-          return elements.map((el) => ({ ...el, boardName: b.name, boardMode: b.mode }));
-        })
-      );
-      return results.flat();
-    },
-    enabled,
-  });
-}
-
 export function MaterialsDrawer({ projectId, onAddImageUrl, activeRoom, activeRoomLabel }: MaterialsDrawerProps) {
   const { data: boards, isLoading: loadingBoards } = usePlanningBoards(projectId);
   const allBoards = useMemo(() => boards || [], [boards]);
-  const { data: elementsRaw, isLoading: loadingElements } = useAllProjectElements(allBoards);
   const { data: photos, isLoading: loadingPhotos } = usePhotos(projectId);
   const photoTagsById = useMemo(() => {
     const map = new Map<number, string[]>();
@@ -92,6 +72,7 @@ export function MaterialsDrawer({ projectId, onAddImageUrl, activeRoom, activeRo
   }, [photos]);
   const { mutate: createPhoto } = useCreatePhoto();
   const { mutateAsync: deletePhoto } = useDeletePhoto();
+  const { mutateAsync: updatePhoto } = useUpdatePhoto();
   const { mutateAsync: uploadImage, isPending: isUploadingPhoto } = useUploadImage();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -99,11 +80,10 @@ export function MaterialsDrawer({ projectId, onAddImageUrl, activeRoom, activeRo
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const replaceTargetRef = useRef<{ key: string; ids: number[] } | null>(null);
+  const replaceTargetRef = useRef<{ key: string; photoId: number } | null>(null);
 
   const [pendingRemove, setPendingRemove] = useState<{
     key: string;
-    canvasElementIds: number[];
     photoIds: number[];
     label: string;
   } | null>(null);
@@ -119,11 +99,7 @@ export function MaterialsDrawer({ projectId, onAddImageUrl, activeRoom, activeRo
   const [groupInput, setGroupInput] = useState("");
 
   const invalidateLibrary = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["library-drawer", "all-elements"], refetchType: "all" });
     await queryClient.invalidateQueries({ queryKey: ["/api/projects/:projectId/photos", projectId], refetchType: "all" });
-    await Promise.all((allBoards || []).map((b: any) =>
-      queryClient.invalidateQueries({ queryKey: [`/api/planning-boards/${b.id}/elements`], refetchType: "all" })
-    ));
   };
 
   const handleUploadFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -157,20 +133,14 @@ export function MaterialsDrawer({ projectId, onAddImageUrl, activeRoom, activeRo
   }, [photos]);
 
   const items = useMemo(
-    () => [...(elementsRaw || []), ...photoElements]
+    () => photoElements
       .filter((el: any) => LIBRARY_TYPES.has(el.type))
-      .reduce((acc: any[], el: any) => {
+      .map((el: any) => {
         const c = el.content || {};
         const key = `${bucketFor(el)}|${(c.name || c.title || "").toLowerCase()}|${(c.hex || c.color || c.imageUrl || c.url || "").toLowerCase()}`;
-        const existing = acc.find((x) => x._dedupeKey === key);
-        if (!existing) {
-          acc.push({ ...el, _dedupeKey: key });
-        } else if (el._photoId && !existing._photoId) {
-          existing._photoId = el._photoId;
-        }
-        return acc;
-      }, []),
-    [elementsRaw, photoElements]
+        return { ...el, _dedupeKey: key };
+      }),
+    [photoElements]
   );
 
   const [activeBucket, setActiveBucket] = useState<KindBucket>("all");
@@ -200,36 +170,19 @@ export function MaterialsDrawer({ projectId, onAddImageUrl, activeRoom, activeRo
   }), [items, activeBucket, filter, scopeToRoom, activeRoom]);
 
   const idsByDedupeKey = useMemo(() => {
-    const map = new Map<string, { canvasElementIds: number[]; photoIds: number[] }>();
-    const push = (key: string, type: "el" | "photo", id: number) => {
-      const cur = map.get(key) || { canvasElementIds: [], photoIds: [] };
-      if (type === "el") cur.canvasElementIds.push(id);
-      else cur.photoIds.push(id);
-      map.set(key, cur);
-    };
-    (elementsRaw || []).forEach((el: any) => {
-      if (!LIBRARY_TYPES.has(el.type)) return;
-      const c = el.content || {};
-      const key = `${bucketFor(el)}|${(c.name || c.title || "").toLowerCase()}|${(c.hex || c.color || c.imageUrl || c.url || "").toLowerCase()}`;
-      push(key, "el", el.id);
-    });
+    const map = new Map<string, number[]>();
     photoElements.forEach((el: any) => {
       const c = el.content || {};
       const key = `${bucketFor(el)}|${(c.name || c.title || "").toLowerCase()}|${(c.hex || c.color || c.imageUrl || c.url || "").toLowerCase()}`;
-      push(key, "photo", el._photoId);
+      const cur = map.get(key) || [];
+      cur.push(el._photoId);
+      map.set(key, cur);
     });
     return map;
-  }, [elementsRaw, photoElements]);
+  }, [photoElements]);
 
   const groupByDedupeKey = useMemo(() => {
     const map = new Map<string, string>();
-    (elementsRaw || []).forEach((el: any) => {
-      if (!LIBRARY_TYPES.has(el.type)) return;
-      const c = el.content || {};
-      const key = `${bucketFor(el)}|${(c.name || c.title || "").toLowerCase()}|${(c.hex || c.color || c.imageUrl || c.url || "").toLowerCase()}`;
-      const g = typeof c.assetGroup === "string" ? c.assetGroup.trim() : "";
-      if (g && !map.get(key)) map.set(key, g);
-    });
     photoElements.forEach((el: any) => {
       const c = el.content || {};
       const key = `${bucketFor(el)}|${(c.name || c.title || "").toLowerCase()}|${(c.hex || c.color || c.imageUrl || c.url || "").toLowerCase()}`;
@@ -238,7 +191,7 @@ export function MaterialsDrawer({ projectId, onAddImageUrl, activeRoom, activeRo
       if (g && !map.get(key)) map.set(key, g);
     });
     return map;
-  }, [elementsRaw, photoElements, photoTagsById]);
+  }, [photoElements, photoTagsById]);
 
   const allGroups = useMemo(() => {
     const s = new Set<string>();
@@ -248,31 +201,22 @@ export function MaterialsDrawer({ projectId, onAddImageUrl, activeRoom, activeRo
 
   const applyGroupToKeys = async (keys: string[], nextGroup: string) => {
     const trimmed = nextGroup.trim();
-    let canvasOk = 0, canvasFail = 0, photoOk = 0, photoFail = 0;
+    let ok = 0, failed = 0;
     for (const key of keys) {
-      const group = idsByDedupeKey.get(key);
-      if (!group) continue;
-      await Promise.all(group.canvasElementIds.map(async (id) => {
-        const existing = (elementsRaw || []).find((x: any) => x.id === id);
-        const nextContent = { ...(existing?.content || {}), assetGroup: trimmed || undefined };
-        try {
-          const res = await fetch(`/api/canvas-elements/${id}`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: nextContent }) });
-          if (res.ok) canvasOk++; else canvasFail++;
-        } catch { canvasFail++; }
-      }));
-      await Promise.all(group.photoIds.map(async (pid) => {
+      const photoIds = idsByDedupeKey.get(key);
+      if (!photoIds) continue;
+      await Promise.all(photoIds.map(async (pid) => {
         const cur = photoTagsById.get(pid) || [];
         const rest = cur.slice(1);
         const nextTags = trimmed ? [trimmed, ...rest] : rest;
         try {
-          const res = await fetch(`/api/photos/${pid}/tags`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tags: nextTags }) });
-          if (res.ok) photoOk++; else photoFail++;
-        } catch { photoFail++; }
+          await updatePhoto({ id: pid, projectId, patch: { tags: nextTags } });
+          ok++;
+        } catch { failed++; }
       }));
     }
     await invalidateLibrary();
-    const total = canvasOk + canvasFail + photoOk + photoFail;
-    const failed = canvasFail + photoFail;
+    const total = ok + failed;
     if (total === 0) {
       toast({ title: "Nothing to update" });
     } else if (failed === 0) {
@@ -307,33 +251,24 @@ export function MaterialsDrawer({ projectId, onAddImageUrl, activeRoom, activeRo
 
   const requestRemove = (el: any) => {
     const key: string = el._dedupeKey;
-    const group = idsByDedupeKey.get(key) || { canvasElementIds: [], photoIds: [] };
+    const photoIds = idsByDedupeKey.get(key) || [];
     const label = el.content?.name || el.content?.title || el.content?.caption || "this item";
-    if (group.canvasElementIds.length === 0 && group.photoIds.length === 0) return;
-    setPendingRemove({ key, canvasElementIds: group.canvasElementIds, photoIds: group.photoIds, label });
+    if (photoIds.length === 0) return;
+    setPendingRemove({ key, photoIds, label });
   };
 
   const confirmRemove = async () => {
     if (!pendingRemove) return;
-    const { key, canvasElementIds, photoIds } = pendingRemove;
+    const { key, photoIds } = pendingRemove;
     setPendingRemove(null);
     setBusyKey(key);
     try {
-      const elResults = await Promise.all(canvasElementIds.map((id) =>
-        fetch(`/api/canvas-elements/${id}`, { method: "DELETE", credentials: "include" })
-      ));
       const photoResults = await Promise.allSettled(photoIds.map((id) => deletePhoto({ id, projectId })));
-      const elFailed = elResults.filter((r) => !r.ok).length;
-      const photoFailed = photoResults.filter((r) => r.status === "rejected").length;
-      const total = canvasElementIds.length + photoIds.length;
-      const failed = elFailed + photoFailed;
+      const failed = photoResults.filter((r) => r.status === "rejected").length;
       if (failed > 0) {
-        toast({ title: "Some copies couldn't be removed", description: `${failed} of ${total} failed. Try again.`, variant: "destructive" });
+        toast({ title: "Some uploads couldn't be removed", description: `${failed} of ${photoIds.length} failed. Try again.`, variant: "destructive" });
       } else {
-        const parts: string[] = [];
-        if (canvasElementIds.length) parts.push(`${canvasElementIds.length} board ${canvasElementIds.length === 1 ? "card" : "cards"}`);
-        if (photoIds.length) parts.push(`${photoIds.length} ${photoIds.length === 1 ? "upload" : "uploads"}`);
-        toast({ title: "Removed", description: parts.join(" + ") });
+        toast({ title: "Removed", description: `${photoIds.length} ${photoIds.length === 1 ? "upload" : "uploads"}` });
       }
       await invalidateLibrary();
     } catch (e: any) {
@@ -345,15 +280,12 @@ export function MaterialsDrawer({ projectId, onAddImageUrl, activeRoom, activeRo
 
   const handleReplaceClick = (el: any) => {
     const key: string = el._dedupeKey;
-    const group = idsByDedupeKey.get(key);
-    const ids = group?.canvasElementIds.length
-      ? group.canvasElementIds
-      : (typeof el.id === "number" ? [el.id] : []);
-    if (ids.length === 0) {
-      toast({ title: "Can't replace", description: "This is a raw upload — remove and re-upload instead." });
+    const photoId = el._photoId as number | undefined;
+    if (!photoId) {
+      toast({ title: "Can't replace", description: "Remove and re-upload instead." });
       return;
     }
-    replaceTargetRef.current = { key, ids };
+    replaceTargetRef.current = { key, photoId };
     if (fileInputRef.current) { fileInputRef.current.value = ""; fileInputRef.current.click(); }
   };
 
@@ -365,19 +297,8 @@ export function MaterialsDrawer({ projectId, onAddImageUrl, activeRoom, activeRo
     try {
       const result = await uploadFile(file);
       if (!result) throw new Error("Upload failed");
-      const newUrl = result.objectPath;
-      const patchResults = await Promise.all(target.ids.map(async (id) => {
-        const existing = (elementsRaw || []).find((x: any) => x.id === id);
-        const nextContent = { ...(existing?.content || {}), imageUrl: newUrl, url: newUrl };
-        const res = await fetch(`/api/canvas-elements/${id}`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: nextContent }) });
-        return res.ok;
-      }));
-      const failed = patchResults.filter((ok) => !ok).length;
-      if (failed > 0) {
-        toast({ title: "Replace partially failed", description: `${failed} of ${target.ids.length} copies didn't update.`, variant: "destructive" });
-      } else {
-        toast({ title: "Image replaced", description: `${target.ids.length} ${target.ids.length === 1 ? "copy" : "copies"} updated.` });
-      }
+      await updatePhoto({ id: target.photoId, projectId, patch: { url: result.objectPath } });
+      toast({ title: "Image replaced" });
       await invalidateLibrary();
     } catch (err: any) {
       toast({ title: "Replace failed", description: err?.message || "Upload error", variant: "destructive" });
@@ -388,7 +309,7 @@ export function MaterialsDrawer({ projectId, onAddImageUrl, activeRoom, activeRo
     }
   };
 
-  const isLoading = loadingBoards || loadingElements || loadingPhotos;
+  const isLoading = loadingBoards || loadingPhotos;
 
   if (!isLoading && allBoards.length === 0) {
     return (
@@ -412,8 +333,7 @@ export function MaterialsDrawer({ projectId, onAddImageUrl, activeRoom, activeRo
     const sub = c.brand || c.supplier || c.code || el.boardName || "";
     const bucket = bucketFor(el);
     const isBusy = busyKey === el._dedupeKey;
-    const _g = idsByDedupeKey.get(el._dedupeKey);
-    const groupSize = (_g ? _g.canvasElementIds.length + _g.photoIds.length : 0) || 1;
+    const groupSize = idsByDedupeKey.get(el._dedupeKey)?.length || 1;
     const groupLabel = groupByDedupeKey.get(el._dedupeKey) || "";
     const isSelected = selectedKeys.has(el._dedupeKey);
     const onTileClick = () => {
@@ -493,7 +413,7 @@ export function MaterialsDrawer({ projectId, onAddImageUrl, activeRoom, activeRo
               </span>
             )}
             <span
-              role="button" tabIndex={0} aria-label={groupSize > 1 ? `Remove (${groupSize} copies)` : "Remove"} title={groupSize > 1 ? `Remove — deletes ${groupSize} copies across boards` : "Remove"}
+              role="button" tabIndex={0} aria-label={groupSize > 1 ? `Remove (${groupSize} uploads)` : "Remove"} title={groupSize > 1 ? `Remove — deletes ${groupSize} matching uploads` : "Remove"}
               onClick={(e) => { e.stopPropagation(); e.preventDefault(); if (!isBusy) requestRemove(el); }}
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); e.preventDefault(); if (!isBusy) requestRemove(el); } }}
               onMouseDown={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()} onDragStart={(e) => { e.stopPropagation(); e.preventDefault(); }}
@@ -629,13 +549,9 @@ export function MaterialsDrawer({ projectId, onAddImageUrl, activeRoom, activeRo
             <AlertDialogDescription>
               {(() => {
                 if (!pendingRemove) return null;
-                const cards = pendingRemove.canvasElementIds.length;
                 const uploads = pendingRemove.photoIds.length;
-                const parts: string[] = [];
-                if (cards) parts.push(`${cards} board ${cards === 1 ? "card" : "cards"}`);
-                if (uploads) parts.push(`${uploads} ${uploads === 1 ? "upload" : "uploads"}`);
-                if (parts.length === 0) return "This deletes it. You can't undo this.";
-                return `This deletes ${parts.join(" and ")} across this project. You can't undo this.`;
+                if (uploads === 0) return "This deletes it. You can't undo this.";
+                return `This deletes ${uploads} ${uploads === 1 ? "upload" : "uploads"}. You can't undo this.`;
               })()}
             </AlertDialogDescription>
           </AlertDialogHeader>

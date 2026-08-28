@@ -63,10 +63,6 @@ export const api = {
     update: { method: "PUT" as const, path: "/api/board/:id" as const },
     delete: { method: "DELETE" as const, path: "/api/board/:id" as const },
   },
-  boardTemplates: {
-    list: { method: "GET" as const, path: "/api/board-templates" as const },
-    get: { method: "GET" as const, path: "/api/board-templates/:templateId" as const },
-  },
   planningBoards: {
     list: { method: "GET" as const, path: "/api/projects/:projectId/planning-boards" as const },
     get: { method: "GET" as const, path: "/api/planning-boards/:id" as const },
@@ -74,14 +70,6 @@ export const api = {
     update: { method: "PATCH" as const, path: "/api/planning-boards/:id" as const },
     delete: { method: "DELETE" as const, path: "/api/planning-boards/:id" as const },
     saveCanvas: { method: "PUT" as const, path: "/api/planning-boards/:id/canvas" as const },
-  },
-  canvasElements: {
-    list: { method: "GET" as const, path: "/api/planning-boards/:boardId/elements" as const },
-    create: { method: "POST" as const, path: "/api/planning-boards/:boardId/elements" as const },
-    createBatch: { method: "POST" as const, path: "/api/planning-boards/:boardId/elements/batch" as const },
-    update: { method: "PATCH" as const, path: "/api/canvas-elements/:id" as const },
-    updatePositions: { method: "PATCH" as const, path: "/api/planning-boards/:boardId/elements/positions" as const },
-    delete: { method: "DELETE" as const, path: "/api/canvas-elements/:id" as const },
   },
   calendar: {
     list: { method: "GET" as const, path: "/api/projects/:projectId/calendar" as const },

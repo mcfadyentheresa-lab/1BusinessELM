@@ -42,12 +42,12 @@ import {
   ZoomIn, ZoomOut, Maximize, Loader2, MoreVertical, Edit3, CheckSquare,
   X, ExternalLink, Pencil, Upload, Copy,
   Bold, Italic, Strikethrough, Underline, List, ListOrdered, Code, Link as LinkIcon,
-  Eraser, Undo2, Redo2, Save, PenTool, Sparkles, TypeIcon, Shapes,
+  Eraser, Undo2, Redo2, Save, PenTool, Sparkles, Shapes,
   CalendarDays, Milestone, ListChecks, Bell, BellOff,
-  ChefHat, Bath, Home, FileText, LayoutPanelLeft, LayoutGrid, Move,
+  FileText, LayoutGrid, Move,
   Lock, Unlock as LockOpen, Hand, Wrench, Check,
-  Spline, MoveRight, Slash, Droplet,
-  Play, Globe, Star, History, AlertTriangle, Settings,
+  Spline, MoveRight, Slash,
+  Play, Globe, Star, History, Settings,
   Pin, Layers, Armchair, Image as ImageIcon, Grid3x3, Crop as CropIcon, RotateCcw,
   ChevronDown, Filter, Sofa, Ruler,
 } from "lucide-react";
@@ -58,8 +58,6 @@ import { PIECE_TYPES } from "@/components/board/FurniturePlannerPanel";
 import { MaterialsDrawer } from "@/components/board/MaterialsDrawer";
 import HardwarePickerDialog, { type HardwareDraft } from "@/components/board/HardwarePickerDialog";
 import { ImageCropDialog } from "@/components/ImageCropDialog";
-import { PaletteExtractionDialog, type PaletteAddPayload } from "@/components/board/PaletteExtractionDialog";
-import { RoomRenderDialog } from "@/components/board/RoomRenderDialog";
 import CanvasConnectors, { CONNECTOR_DEFAULT_COLOR, anchorDots, type ConnectorContent, type ConnectorStyle, type ConnectorCurve } from "@/components/board/CanvasConnectors";
 import { PresentationMode } from "@/components/board/PresentationMode";
 import AIPartnerPanel from "@/components/board/AIPartnerPanel";
@@ -101,7 +99,7 @@ import { useBoardRealtime } from "@/hooks/use-board-realtime";
 import { useAuth } from "@/hooks/use-auth";
 import { useViewMode } from "@/hooks/use-view-mode";
 import { api, buildUrl } from "@/shared/routes";
-import { recognizeAllShapes, recognizeShape, looksLikeHandwriting } from "@/lib/shape-recognition";
+import { recognizeAllShapes, recognizeShape } from "@/lib/shape-recognition";
 import type { CanvasElement, PlanningBoard as PlanningBoardType, PaintColor, Json } from "@/shared/database.types";
 import { queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
@@ -511,19 +509,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   const effectiveRole = isAdmin ? viewMode : actualRole;
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { data: templateCatalogue = [] } = useQuery<{ id: string; name: string; description: string; icon: string }[]>({
-    queryKey: ["board-templates"],
-    enabled: isAdmin,
-    queryFn: async () => {
-      const { data, error } = await supabase.from("board_templates").select("id, name, description").order("name");
-      if (error) throw error;
-      return (data ?? []).map((t) => ({ ...(t as object), icon: "" })) as any[];
-    },
-  });
-  // User-saved templates have no shipped preview images. The picker renders
-  // a clean iconic tile when this map yields undefined for a template id.
-  const templatePreviewById: Record<string, string> = {};
-
   // ?board=<id> deep link — used by "Jump back in" so the user lands directly on
   // the last board they had open. Read once on mount; we still defensively
   // re-validate against the actual boards list once it loads.
@@ -553,13 +538,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   const spaceRef = useRef(false);
 
   const [showRenameDialog, setShowRenameDialog] = useState(false);
-  // Save-as-template dialog state. Opening it copies the current selectedBoard's
-  // canvas to a new row in board_templates via POST /api/board-templates.
-  const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
-  const [saveTemplateName, setSaveTemplateName] = useState("");
-  const [saveTemplateDesc, setSaveTemplateDesc] = useState("");
-  const [saveTemplateBusy, setSaveTemplateBusy] = useState(false);
-  const [saveTemplateError, setSaveTemplateError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showClearMockupConfirm, setShowClearMockupConfirm] = useState(false);
   const [showManageBoards, setShowManageBoards] = useState(false);
@@ -610,7 +588,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   const [renameName, setRenameName] = useState("");
   const [newBoardName, setNewBoardName] = useState("");
   const [newBoardMode, setNewBoardMode] = useState<BoardMode>("project");
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [showBoardSettings, setShowBoardSettings] = useState(false);
   const [compareSnapshotId, setCompareSnapshotId] = useState<number | null>(null);
 
@@ -635,16 +612,11 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadTargetId, setUploadTargetId] = useState<number | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  // Per-link unfurl status — keyed by element id. "loading" while we're fetching og data,
-  // "error" when the server gave up. Successful unfurls drop out of this map.
+  // Per-link unfurl status — keyed by element id. "error" is still used to gate the
+  // manual "paste image URL" fallback UI when a link has no image.
   const [linkUnfurlState, setLinkUnfurlState] = useState<Record<number, "loading" | "error">>({});
-  // Tracks element ids whose backfill unfurl has been attempted this session, so a missing
-  // imageUrl on an existing link doesn't kick off a fetch on every render.
-  const linkBackfillAttemptedRef = useRef<Set<number>>(new Set());
   // Manual "paste image URL" fallback per link card; value is the in-progress draft.
   const [linkImageDraft, setLinkImageDraft] = useState<Record<number, string>>({});
-  // Per-element link recheck status — "loading" during the manual recheck request.
-  const [linkRecheckState, setLinkRecheckState] = useState<Record<number, "loading">>({});
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; elementId: number } | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showImagePopup, setShowImagePopup] = useState(false);
@@ -680,13 +652,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
 
   const [showHardwareDialog, setShowHardwareDialog] = useState(false);
   const pendingHardwareDropRef = useRef<{ x: number; y: number } | null>(null);
-  const [showPaletteDialog, setShowPaletteDialog] = useState(false);
-  const [renderRoomName, setRenderRoomName] = useState<string | null>(null);
-  // Step 6 — per-room spec PDF export. While truthy, the Spec PDF button on
-  // the room tab strip shows "Building…" and is disabled.
-  const [exportingSpecRoom, setExportingSpecRoom] = useState<string | null>(null);
-  const [palettePresetUrl, setPalettePresetUrl] = useState<string | null>(null);
-  const palettePresetSourceRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
   const [imageUrlInput, setImageUrlInput] = useState("");
   const imageUrlInputRef = useRef<HTMLInputElement | null>(null);
   const noteTextareaRefs = useRef<Record<string, HTMLTextAreaElement | HTMLInputElement | null>>({});
@@ -801,8 +766,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   const [drawUndoStack, setDrawUndoStack] = useState<any[]>([]);
   const [_isDrawing, setIsDrawing] = useState(false);
   const drawCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [aiProcessing, setAiProcessing] = useState(false);
-  const autoConvertInFlightRef = useRef(false);
 
   // Connect tool — two-tap arrow connector creation. Admin/crew only.
   const zombieConnectorMissesRef = useRef<Map<number, number>>(new Map());
@@ -1174,7 +1137,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     setShowNewBoardDialog(false);
     setNewBoardName("");
     setNewBoardMode("project");
-    setSelectedTemplateId(null);
   };
 
   const handleCreateBoard = async () => {
@@ -1185,9 +1147,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     // be safe.
     cancelPendingSave();
     try {
-      const templatesList = (templateCatalogue ?? []) as any[];
-      const selectedTemplate = selectedTemplateId ? templatesList.find((template) => template.id === selectedTemplateId) : null;
-      const boardName = newBoardName.trim() || (selectedTemplate?.name || "Untitled Board");
+      const boardName = newBoardName.trim() || "Untitled Board";
       const boardResult = await createBoard({
         projectId,
         name: boardName,
@@ -1625,7 +1585,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       pushUndo();
       addElement(el);
       sendElementAdd(el);
-      setTimeout(() => unfurlLink(el.id, url.trim()), 0);
       return el.id as number;
     } catch {
       toast({ title: "Error", description: "Failed to add link", variant: "destructive" });
@@ -1668,30 +1627,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   // Create an image element prefilled with a remote URL (e.g. a Pinterest pin
   // thumbnail). Mirrors createElement('image') but injects the URL into
   // content so the user doesn't have to upload separately.
-  const createImageFromUrl = async (imageUrl: string, caption?: string) => {
-    if (!selectedBoardId) return;
-    const def = ELEMENT_DEFAULTS["image"];
-    const desiredX = Math.round((-pan.x) / zoom + 24);
-    const desiredY = Math.round((-pan.y) / zoom + 24);
-    const { x: placedX, y: placedY } = findFreeSlot(desiredX, desiredY, def.width, def.height);
-    const newZ = maxZ;
-    setMaxZ((z) => z + 1);
-    const baseContent: any = { ...def.content, url: imageUrl, caption: caption || "" };
-    if (activeRoom) {
-      const targetField = (selectedBoard as any)?.mode === "library" ? "category" : "room";
-      if (targetField === "room") baseContent.room = activeRoom;
-      else baseContent.category = activeRoom;
-    }
-    try {
-      const el = await createCanvasElement(selectedBoardId, { type: "image", x: placedX, y: placedY, width: def.width, height: def.height, z_index: newZ, content: baseContent });
-      pushUndo();
-      addElement(el);
-      sendElementAdd(el);
-    } catch {
-      toast({ title: "Error", description: "Failed to add image", variant: "destructive" });
-    }
-  };
-
   const createHardware = async (draft: HardwareDraft) => {
     if (!selectedBoardId) return;
     const def = ELEMENT_DEFAULTS.hardware;
@@ -1727,82 +1662,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   // Drop a row of color_swatch elements onto the board from an extracted palette.
   // If the extraction came from a board image, anchor the row just below it; otherwise
   // anchor at the current viewport center.
-  const createPaletteSwatches = async (payload: PaletteAddPayload) => {
-    if (!selectedBoardId) return;
-    const def = ELEMENT_DEFAULTS["surface-paint"];
-    const gap = 12;
-    const rowSpacing = def.width + gap;
-
-    const source = palettePresetSourceRef.current;
-    palettePresetSourceRef.current = null;
-    const rows = payload.rows;
-    const totalWidth = rows.length * def.width + (rows.length - 1) * gap;
-
-    let startX: number;
-    let startY: number;
-    if (source) {
-      startX = source.x + Math.round((source.w - totalWidth) / 2);
-      startY = source.y + source.h + 24;
-    } else {
-      const viewW = containerRef.current?.clientWidth || 800;
-      const viewH = containerRef.current?.clientHeight || 600;
-      const centerX = (-pan.x + viewW / 2) / zoom;
-      const centerY = (-pan.y + viewH / 2) / zoom;
-      startX = Math.round(centerX - totalWidth / 2);
-      startY = Math.round(centerY - def.height / 2);
-    }
-
-    const baseZ = maxZ;
-    setMaxZ((z) => z + rows.length);
-
-    let added = 0;
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const matchHex = row.match?.hex || row.hex;
-      const content: any = {
-        kind: "paint",
-        color: matchHex,
-        hex: matchHex,
-        name: row.match?.name || "Extracted color",
-        status: "idea",
-      };
-      if (row.match) {
-        content.brand = row.match.brand;
-        content.code = row.match.code;
-        if (typeof row.match.lrv === "number") content.lrv = row.match.lrv;
-      }
-      if (payload.room) content.room = payload.room;
-
-      try {
-        const el = await createCanvasElement(selectedBoardId, {
-          type: "surface",
-          x: startX + i * rowSpacing,
-          y: startY,
-          width: def.width,
-          height: def.height,
-          z_index: baseZ + i,
-          content,
-        });
-        pushUndo();
-        addElement(el);
-        sendElementAdd(el);
-        added++;
-      } catch {
-        // Continue dropping the rest; we'll surface a partial-success toast at the end.
-      }
-    }
-    if (added === 0) {
-      toast({ title: "Error", description: "Failed to add palette to board", variant: "destructive" });
-    } else {
-      toast({
-        title: "Palette added",
-        description: payload.room
-          ? `${added} color${added === 1 ? "" : "s"} for ${payload.room}`
-          : `${added} color${added === 1 ? "" : "s"} dropped on the board`,
-      });
-    }
-  };
-
   const createConnector = async (fromId: number, toId: number) => {
     if (!selectedBoardId || fromId === toId) return;
     const content: ConnectorContent = { fromId, toId, style: "arrow", curve: "curved" };
@@ -2009,44 +1868,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     }
   };
 
-  // Manually re-check a vendor URL's health for one element. Hits the server-side
-  // recheck endpoint (admin/crew + rate-limited there) and merges the result onto
-  // the element so the broken-link chip refreshes.
-  const recheckElementLink = useCallback(async (id: number) => {
-    setLinkRecheckState((s) => ({ ...s, [id]: "loading" }));
-    try {
-      const res = await fetch(`/api/board/element/${id}/recheck-link`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!res.ok) {
-        toast({
-          title: "Couldn't recheck link",
-          description: res.status === 429 ? "Too many requests — try again later." : "Try again in a moment.",
-          variant: "destructive",
-        });
-        return;
-      }
-      const data = await res.json() as { linkHealth?: { status: string; checkedAt: string; code?: number } };
-      const el = useCanvasStore.getState().elements[id];
-      if (!el || !data.linkHealth) return;
-      const next = { ...((el.content as any) || {}), linkHealth: data.linkHealth };
-      updateElement(id, { content: next });
-      sendElementUpdate(id, { content: next });
-      if (data.linkHealth.status === "healthy") {
-        toast({ title: "Link is healthy" });
-      }
-    } catch {
-      toast({ title: "Couldn't recheck link", variant: "destructive" });
-    } finally {
-      setLinkRecheckState((s) => {
-        const out = { ...s };
-        delete out[id];
-        return out;
-      });
-    }
-  }, [toast, updateElement, sendElementUpdate]);
-
   // Quietly merge a partial content patch into an element. Used by the link-unfurl
   // backfill so re-renders don't push undo history or toast the user.
   const patchElementContentSilently = useCallback(async (id: number, patch: Record<string, any>) => {
@@ -2062,47 +1883,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       toast({ title: "Save failed", description: "A background update wasn't saved to the server.", variant: "destructive" });
     }
   }, [updateElement, sendElementUpdate, toast]);
-
-  // Fetch og:image / title / siteName / description for a link card via the server-side
-  // unfurl endpoint and merge it onto the element. Marks loading/error state so the card
-  // can render a skeleton or fallback. Always goes through the server — never fetches
-  // og:image client-side (preserves rate-limit and CORS guardrails).
-  const unfurlLink = useCallback(async (id: number, url: string) => {
-    if (!url || !/^https?:\/\//i.test(url)) return;
-    setLinkUnfurlState((s) => ({ ...s, [id]: "loading" }));
-    try {
-      const res = await fetch("/api/board/unfurl", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ url }),
-      });
-      if (!res.ok) {
-        setLinkUnfurlState((s) => ({ ...s, [id]: "error" }));
-        return;
-      }
-      const data = await res.json() as { title?: string; image?: string; siteName?: string; description?: string };
-      const el = useCanvasStore.getState().elements[id];
-      if (!el) return;
-      const c = (el.content || {}) as any;
-      const patch: Record<string, any> = {};
-      if (data.image && !c.imageUrl) patch.imageUrl = data.image;
-      if (data.siteName && !c.siteName) patch.siteName = data.siteName;
-      if (data.description && !c.description) patch.description = data.description;
-      // Backfill the title only if the user hasn't typed one.
-      if (data.title && !c.title) patch.title = data.title;
-      if (Object.keys(patch).length > 0) {
-        await patchElementContentSilently(id, patch);
-      }
-      setLinkUnfurlState((s) => {
-        const next = { ...s };
-        delete next[id];
-        return next;
-      });
-    } catch {
-      setLinkUnfurlState((s) => ({ ...s, [id]: "error" }));
-    }
-  }, [patchElementContentSilently]);
 
   // Upload a local file from the device and return the URL.
   // Used by furniture cards (image upload) and notes (image attach).
@@ -2124,104 +1904,16 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   // Re-host an external image URL through our /api/uploads/from-url proxy so
   // it's served from our own bucket. Bypasses Referer-based hotlink protection
   // (Houzz, Pinterest, many CDNs return blank/blocked when fetched cross-origin
-  // with the wrong Referer). Returns the final URL — either the rehosted
-  // /objects/... path on success, or null on failure (caller can decide to
-  // fall back to the original URL or skip).
-  // Skips the proxy if the URL is already pointing at our own /objects/ path.
+  // with the wrong Referer). There's no server-side proxy in this app to bypass
+  // that protection, so this just validates and returns the URL as-is — images
+  // from hotlink-protected sources may not render, but the element still gets
+  // created successfully either way, which matters more for the toolbar/paste/
+  // drop paths that otherwise create nothing at all on failure.
   const rehostExternalImageUrl = useCallback(async (url: string): Promise<string | null> => {
     const trimmed = (url || "").trim();
     if (!trimmed || !/^https?:\/\//i.test(trimmed)) return null;
-    const supabaseHost = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
-    const isAlreadyOurs =
-      trimmed.startsWith("/objects/") ||
-      trimmed.startsWith(`${window.location.origin}/objects/`) ||
-      (supabaseHost ? trimmed.startsWith(`${supabaseHost}/storage/v1/object/public/project-assets/`) : false) ||
-      trimmed.startsWith("/storage/v1/object/public/project-assets/");
-    if (isAlreadyOurs) return trimmed;
-    try {
-      const proxyRes = await fetch("/api/uploads/from-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ url: trimmed }),
-      });
-      if (!proxyRes.ok) return null;
-      const data = await proxyRes.json();
-      return data?.objectPath ?? null;
-    } catch {
-      return null;
-    }
+    return trimmed;
   }, []);
-
-  // Background autofill for product cards. Given a product page URL, calls the
-  // server unfurl endpoint and quietly backfills BLANK content fields with
-  // og:title → name, og:site_name → supplier, og price → price, og:image →
-  // imageUrl (rehosted through our bucket so it actually loads).
-  //
-  // Never overwrites a field the user already typed.
-  const autofillProductFromUrl = useCallback(async (id: number, url: string) => {
-    if (!url || !/^https?:\/\//i.test(url)) return;
-    let data: { title?: string; image?: string; siteName?: string; price?: number; currency?: string } | null = null;
-    try {
-      const res = await fetch("/api/board/unfurl", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ url }),
-      });
-      if (!res.ok) return;
-      data = await res.json();
-    } catch {
-      return;
-    }
-    if (!data) return;
-    const el = useCanvasStore.getState().elements[id];
-    if (!el) return;
-    const c = (el.content || {}) as any;
-    const patch: Record<string, any> = {};
-    if (data.title && !c.name) patch.name = data.title;
-    if (data.siteName && !c.supplier) patch.supplier = data.siteName;
-    if (typeof data.price === "number" && Number.isFinite(data.price) && (c.price === undefined || c.price === null || c.price === "")) {
-      patch.price = data.price;
-      if (data.currency && !c.currency) patch.currency = data.currency;
-    }
-    if (data.image && !c.imageUrl) {
-      const rehosted = await rehostExternalImageUrl(data.image);
-      if (rehosted) patch.imageUrl = rehosted;
-    }
-    if (Object.keys(patch).length > 0) {
-      // Re-read at apply time in case the user typed in the meantime.
-      const fresh = useCanvasStore.getState().elements[id];
-      if (!fresh) return;
-      const freshContent = (fresh.content || {}) as any;
-      const finalPatch: Record<string, any> = {};
-      for (const [key, val] of Object.entries(patch)) {
-        if (freshContent[key] === undefined || freshContent[key] === null || freshContent[key] === "") {
-          finalPatch[key] = val;
-        }
-      }
-      if (Object.keys(finalPatch).length > 0) {
-        await patchElementContentSilently(id, finalPatch);
-        toast({ title: "Product details filled", description: "Prefilled blank fields from product page." });
-      }
-    }
-  }, [patchElementContentSilently, rehostExternalImageUrl, toast]);
-
-  // Lazy backfill: any existing link element without imageUrl gets one unfurl attempt
-  // per session. Result is cached on the element content so the next paint stays cheap.
-  useEffect(() => {
-    for (const id in elements) {
-      const el = elements[id];
-      if (!el || el.type !== "link") continue;
-      const c = (el.content || {}) as any;
-      if (c.imageUrl) continue;
-      if (!c.url || !/^https?:\/\//i.test(c.url)) continue;
-      if (linkBackfillAttemptedRef.current.has(el.id)) continue;
-      if (linkUnfurlState[el.id]) continue;
-      linkBackfillAttemptedRef.current.add(el.id);
-      setTimeout(() => unfurlLink(el.id, c.url), 0);
-    }
-  }, [elements, linkUnfurlState, unfurlLink]);
 
   // Paste-to-create. A single document-level paste listener turns clipboard
   // contents into board elements:
@@ -2383,10 +2075,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         setSelectedConnectorId(null);
         setEditingId(null);
       }
-    } else if (type === "palette") {
-      palettePresetSourceRef.current = null;
-      setPalettePresetUrl(null);
-      setShowPaletteDialog(true);
     } else {
       createElement(type);
     }
@@ -3015,57 +2703,11 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       pos?.y ??
       Math.round((-pan.y + (containerRef.current?.clientHeight || 600) / 2) / zoom - 100);
 
-    // Re-host external images through our server to bypass Referer-based
-    // hotlink protection (Houzz, Pinterest, many CDNs return blank/blocked
-    // when fetched cross-origin with the wrong Referer). The server fetches
-    // the bytes, validates the content-type, and stores them in our bucket.
-    // If the URL is already ours (legacy /objects/ path or a Supabase Storage
-    // public URL from the project-assets bucket), skip the proxy step.
-    const trimmed = url.trim();
-    const supabaseHost = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, "");
-    const isAlreadyOurs =
-      trimmed.startsWith("/objects/") ||
-      trimmed.startsWith(`${window.location.origin}/objects/`) ||
-      (supabaseHost ? trimmed.startsWith(`${supabaseHost}/storage/v1/object/public/project-assets/`) : false) ||
-      trimmed.startsWith("/storage/v1/object/public/project-assets/");
-    let finalUrl = trimmed;
-    if (!isAlreadyOurs) {
-      try {
-        const proxyRes = await fetch("/api/uploads/from-url", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ url: trimmed }),
-        });
-        if (proxyRes.ok) {
-          const data = await proxyRes.json();
-          if (data?.objectPath) {
-            finalUrl = data.objectPath;
-          }
-        } else {
-          // Surface the real reason instead of silently keeping a blank
-          // hot-linked image on the canvas.
-          let reason = `${proxyRes.status}`;
-          try {
-            const j = await proxyRes.json();
-            if (j?.error) reason = j.error;
-          } catch { /* non-JSON body — keep status */ }
-          toast({
-            title: "Couldn't fetch that image",
-            description: reason,
-            variant: "destructive",
-          });
-          return;
-        }
-      } catch {
-        toast({
-          title: "Couldn't fetch that image",
-          description: "Network error",
-          variant: "destructive",
-        });
-        return;
-      }
-    }
+    // External images (Houzz, Pinterest, etc.) are used directly by URL — this
+    // app has no server-side image-proxy, so hotlink-protected sources may not
+    // render, but the element is still created either way rather than failing
+    // outright.
+    const finalUrl = url.trim();
 
     try {
       const el = await createCanvasElement(selectedBoardId, {
@@ -3096,7 +2738,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   const isDrawingRef = useRef(false);
   const holdSnapTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastMoveTimeRef = useRef(0);
-  const handwritingTimerRef = useRef<NodeJS.Timeout | null>(null);
   // Hold-to-snap for the modern pointer pipeline (Pencil, touch-draw, mouse via
   // Add→Draw). When the user pauses mid-stroke for ~500ms and the points so far
   // look like a recognisable shape (line / circle / rectangle / triangle / arrow),
@@ -3105,7 +2746,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
   // path so the two flows don't fight each other.
   const pointerHoldSnapTimerRef = useRef<NodeJS.Timeout | null>(null);
   const pointerStrokeSnappedRef = useRef(false);
-  const [autoTextConverting, setAutoTextConverting] = useState(false);
 
   const redrawOverlayCanvas = useCallback(() => {
     const canvas = drawCanvasRef.current;
@@ -3566,94 +3206,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     return () => ro.disconnect();
   }, [drawingMode, drawingPaths, redrawOverlayCanvas]);
 
-  const tryAutoTextConvert = useCallback(async () => {
-    const paths = drawPathsRef.current;
-    if (paths.length === 0 || !looksLikeHandwriting(paths)) return;
-    const hasUnrecognized = paths.some((p: any) => !recognizeShape(p));
-    if (!hasUnrecognized) return;
-
-    if (autoConvertInFlightRef.current) return;
-    const canvas = drawCanvasRef.current;
-    if (!canvas) return;
-
-    autoConvertInFlightRef.current = true;
-    setAutoTextConverting(true);
-    try {
-      const tempCanvas = document.createElement("canvas");
-      const bb = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-      for (const path of paths) {
-        for (const pt of path.points) {
-          if (pt.x < bb.minX) bb.minX = pt.x;
-          if (pt.y < bb.minY) bb.minY = pt.y;
-          if (pt.x > bb.maxX) bb.maxX = pt.x;
-          if (pt.y > bb.maxY) bb.maxY = pt.y;
-        }
-      }
-      const padding = 20;
-      const w = bb.maxX - bb.minX + padding * 2;
-      const h = bb.maxY - bb.minY + padding * 2;
-      const renderScale = 2;
-      tempCanvas.width = Math.max(200, Math.min(w * renderScale, 800));
-      tempCanvas.height = Math.max(100, Math.min(h * renderScale, 500));
-      const ctx = tempCanvas.getContext("2d");
-      if (!ctx) return;
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-      const scale = Math.min(tempCanvas.width / w, tempCanvas.height / h);
-      ctx.translate(padding * scale, padding * scale);
-      ctx.scale(scale, scale);
-      ctx.translate(-bb.minX, -bb.minY);
-      for (const path of paths) {
-        if (!path.points || path.points.length < 2) continue;
-        ctx.beginPath();
-        ctx.strokeStyle = "#000000";
-        ctx.lineWidth = Math.max(3, (path.strokeWidth || 3) * 1.5);
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        ctx.moveTo(path.points[0].x, path.points[0].y);
-        for (let i = 1; i < path.points.length; i++) {
-          ctx.lineTo(path.points[i].x, path.points[i].y);
-        }
-        ctx.stroke();
-      }
-      const imageData = tempCanvas.toDataURL("image/png");
-      const resp = await fetch("/api/ai/recognize-handwriting", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ imageData }),
-      });
-      if (resp.ok) {
-        const { text } = await resp.json();
-        if (text && text.trim().length > 0 && selectedBoardId) {
-          const topMaxZ = Math.max(0, ...Object.values(elements).map((el) => el.z_index || 0));
-          const noteWidth = Math.max(220, Math.min(text.trim().length * 10, 360));
-          const noteHeight = Math.max(80, Math.ceil(text.trim().length / 30) * 28 + 60);
-          const el = await createCanvasElement(selectedBoardId, {
-            type: "text",
-            x: bb.minX,
-            y: bb.minY - 10,
-            width: noteWidth,
-            height: noteHeight,
-            z_index: topMaxZ + 1,
-            content: { variant: "clean", title: "", text: text.trim() },
-          });
-          addElement(el);
-          sendElementAdd(el);
-          drawPathsRef.current = [];
-          setDrawingPaths([]);
-          redrawOverlayCanvas();
-          toast({ title: "Text Recognized", description: `"${text.trim()}"` });
-        }
-      }
-    } catch (err) {
-      console.error("Auto text conversion error:", err);
-    } finally {
-      setAutoTextConverting(false);
-      autoConvertInFlightRef.current = false;
-    }
-  }, [selectedBoardId, elements, addElement, redrawOverlayCanvas, toast]);
-
   // Try to snap the last drawn path to a recognized shape
   const trySnapLastPath = useCallback(() => {
     const paths = drawPathsRef.current;
@@ -3752,10 +3304,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     const handleDown = (clientX: number, clientY: number) => {
       if (!canvas || canvas.width === 0 || canvas.height === 0) return;
       clearHoldTimer();
-      if (handwritingTimerRef.current) {
-        clearTimeout(handwritingTimerRef.current);
-        handwritingTimerRef.current = null;
-      }
       const { x, y } = getBoard(clientX, clientY);
       if (drawTool === "eraser") {
         const newPaths = drawPathsRef.current.filter((p: any) =>
@@ -3794,14 +3342,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         setIsDrawing(false);
         trySnapLastPath();
         setDrawingPaths([...drawPathsRef.current]);
-        if (handwritingTimerRef.current) {
-          clearTimeout(handwritingTimerRef.current);
-        }
-        handwritingTimerRef.current = setTimeout(() => {
-          if (!isDrawingRef.current) {
-            tryAutoTextConvert();
-          }
-        }, 800);
       }
     };
 
@@ -3854,9 +3394,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
 
     return () => {
       clearHoldTimer();
-      if (handwritingTimerRef.current) {
-        clearTimeout(handwritingTimerRef.current);
-      }
       canvas.removeEventListener("mousedown", onMouseDown);
       canvas.removeEventListener("mousemove", onMouseMove);
       canvas.removeEventListener("mouseup", onMouseUp);
@@ -3866,7 +3403,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       canvas.removeEventListener("touchend", onTouchEnd);
       canvas.removeEventListener("touchcancel", onTouchEnd);
     };
-  }, [drawingMode, drawTool, drawColor, drawStrokeWidth, pan, zoom, redrawOverlayCanvas, trySnapLastPath, tryAutoTextConvert]);
+  }, [drawingMode, drawTool, drawColor, drawStrokeWidth, pan, zoom, redrawOverlayCanvas, trySnapLastPath]);
 
   // Save an annotation stroke to the element's content.annotations array.
   const saveAnnotationStroke = useCallback(async (elementId: number, stroke: Stroke) => {
@@ -4111,11 +3648,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
             // like a recognisable shape (and the user lifted before the hold
             // timer fired), pop it into the perfect version. Same recognizer.
             trySnapLastPath();
-            // Trigger handwriting auto-convert on idle, matching the legacy timer.
-            if (handwritingTimerRef.current) clearTimeout(handwritingTimerRef.current);
-            handwritingTimerRef.current = setTimeout(() => {
-              tryAutoTextConvert();
-            }, 800);
           }
         }
         pendingFreestandingDrawRef.current = null;
@@ -4153,7 +3685,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       root.removeEventListener("pointerup", onPointerUp);
       root.removeEventListener("pointercancel", onPointerCancel);
     };
-  }, [pan, zoom, elementHitAt, shouldPointerDraw, drawColor, drawStrokeWidth, drawingMode, touchDrawing, redrawOverlayCanvas, saveAnnotationStroke, tryAutoTextConvert, trySnapLastPath, user]);
+  }, [pan, zoom, elementHitAt, shouldPointerDraw, drawColor, drawStrokeWidth, drawingMode, touchDrawing, redrawOverlayCanvas, saveAnnotationStroke, trySnapLastPath, user]);
 
   const selectedBoard = boards.find((b: PlanningBoardType) => b.id === selectedBoardId);
   const clientProject = allProjects.find((p: any) => p.id === projectId);
@@ -4723,40 +4255,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     );
   };
 
-  // Vendor-link health chip. Shows a warm-amber pill when a link has been
-  // checked and found broken/unreachable. The "Recheck" action calls the
-  // server endpoint to re-test the URL and updates the element in place.
-  const renderLinkHealthChip = (el: CanvasElement) => {
-    const c = (el.content || {}) as any;
-    const lh = c.linkHealth as { status?: string; checkedAt?: string } | undefined;
-    if (!lh || (lh.status !== "unhealthy" && lh.status !== "unreachable")) return null;
-    const label = lh.status === "unhealthy" ? "Link broken" : "Link unreachable";
-    const isLoading = linkRecheckState[el.id] === "loading";
-    return (
-      <div
-        className="flex items-center gap-1 mt-1.5"
-        onMouseDown={(e) => e.stopPropagation()}
-        data-testid={`chip-link-health-${el.id}`}
-      >
-        <span
-          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10px] font-mono uppercase tracking-wider"
-          style={{ backgroundColor: "rgba(168, 99, 43, 0.14)", color: "#a8632b" }}
-        >
-          <AlertTriangle className="h-2.5 w-2.5" strokeWidth={2.5} />
-          {label}
-        </span>
-        <button
-          type="button"
-          className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-sm text-muted-foreground hover:bg-primary/10 hover:text-primary disabled:opacity-50"
-          onClick={(e) => { e.stopPropagation(); recheckElementLink(el.id); }}
-          disabled={isLoading}
-          data-testid={`button-link-recheck-${el.id}`}
-        >
-          {isLoading ? "…" : "Recheck"}
-        </button>
-      </div>
-    );
-  };
 
   // Quantity stepper for hardware/surface/product. Default 1; renders a small
   // 44pt-friendly row when the card is selected so price math + the spec-sheet
@@ -5695,7 +5193,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                   )}
                 </div>
               )}
-              {renderLinkHealthChip(el)}
               {isSelected && renderQuantityStepper(el)}
             </div>
             {isSelected && (
@@ -5837,7 +5334,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                 {c.notes && <div className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{c.notes}</div>}
               </div>
             )}
-            {renderLinkHealthChip(el)}
             {isSelected && renderQuantityStepper(el)}
           </div>
           {c.vendorUrl && (
@@ -5961,7 +5457,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
               <div className="text-[11px] text-muted-foreground line-clamp-2">{c.notes}</div>
             )}
             <div className="pointer-events-auto">
-              {renderLinkHealthChip(el)}
               {isSelected && renderQuantityStepper(el)}
               {isSelected && renderCategoryField(el)}
             </div>
@@ -6106,7 +5601,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
               <div className="text-[11px] text-muted-foreground line-clamp-2">{c.notes}</div>
             )}
             <div className="pointer-events-auto">
-              {renderLinkHealthChip(el)}
               {isSelected && renderQuantityStepper(el)}
               {isSelected && renderCategoryField(el)}
             </div>
@@ -6285,13 +5779,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                                 const urlWasBlank = !current.url || !String(current.url).trim();
                                 if (urlWasBlank) patch.url = sup.url;
                                 handleUpdateContent(el.id, patch);
-                                // If we just prefilled the brand homepage, kick off a
-                                // background unfurl so og data fills any remaining blanks.
-                                // The user's actual product URL (when they paste one)
-                                // will trigger a richer autofill on its own onBlur.
-                                if (urlWasBlank) {
-                                  setTimeout(() => autofillProductFromUrl(el.id, sup.url), 0);
-                                }
                               }}
                               data-testid={`supplier-option-${el.id}-${sup.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`}
                             >
@@ -6345,12 +5832,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                   onBlur={(e) => {
                     const raw = e.target.value.trim();
                     handleUpdateContent(el.id, { ...c, url: raw });
-                    // Background autofill — never blocks the input. Only fills
-                    // BLANK fields (name, supplier, price, imageUrl), so re-typing
-                    // the same URL won't clobber edits.
-                    if (raw && /^https?:\/\//i.test(raw)) {
-                      setTimeout(() => autofillProductFromUrl(el.id, raw), 0);
-                    }
                   }}
                   data-testid={`input-product-url-${el.id}`}
                 />
@@ -6401,7 +5882,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                 )}
               </div>
             )}
-            {renderLinkHealthChip(el)}
             {isSelected && renderQuantityStepper(el)}
           </div>
           {isSelected && (
@@ -6506,9 +5986,8 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                     const next = e.target.value.trim();
                     handleUpdateContent(el.id, { ...c, url: next });
                     if (next && next !== c.url) {
-                      // New URL pasted — refresh the preview from scratch.
+                      // New URL pasted — clear the old preview so a stale image/title doesn't linger.
                       patchElementContentSilently(el.id, { imageUrl: "", siteName: "", description: "" });
-                      unfurlLink(el.id, next);
                     }
                   }}
                   data-testid={`input-link-url-${el.id}`}
@@ -6581,31 +6060,10 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                 )}
               </>
             )}
-            {renderLinkHealthChip(el)}
           </div>
           {isSelected && (
             <div className="absolute -top-8 right-0 flex gap-1">
               {renderCompareChip(el)}
-              {c.url && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        unfurlLink(el.id, c.url);
-                      }}
-                      disabled={isLinkLoading || !c.url}
-                      data-testid={`button-link-replace-image-${el.id}`}
-                    >
-                      {isLinkLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ImagePlus className="h-3 w-3" />}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">Replace image</TooltipContent>
-                </Tooltip>
-              )}
               {c.url && (
                 <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => window.open(c.url, "_blank")} data-testid={`button-open-link-${el.id}`}>
                   <ExternalLink className="h-3 w-3" />
@@ -6789,27 +6247,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                     </TooltipContent>
                   </Tooltip>
                 )}
-                {effectiveRole !== "client" && c.url && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-6 w-6"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          palettePresetSourceRef.current = { x: el.x, y: el.y, w: el.width, h: el.height };
-                          setPalettePresetUrl(c.url);
-                          setShowPaletteDialog(true);
-                        }}
-                        data-testid={`button-extract-palette-${el.id}`}
-                      >
-                        <Droplet className="h-3 w-3" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="text-xs">Extract palette</TooltipContent>
-                  </Tooltip>
-                )}
                 <Button size="icon" variant="ghost" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); triggerImageUpload(el.id); }} disabled={isUploading} data-testid={`button-replace-image-${el.id}`}>
                   <Upload className="h-3 w-3" />
                 </Button>
@@ -6891,7 +6328,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       tools: [
         { type: "image", icon: ImagePlus, label: "Photo" },
         { type: "link", icon: Link2, label: "Link" },
-        ...(effectiveRole === "client" ? [] : [{ type: "palette", icon: Droplet, label: "Palette" }]),
       ],
     },
     {
@@ -6958,9 +6394,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       items: [
         { type: "image", icon: ImagePlus, label: "Photo", hint: "Upload or paste URL", key: "I" },
         { type: "link", icon: Link2, label: "Web link", hint: "Pulls preview image automatically" },
-        ...(effectiveRole === "client"
-          ? []
-          : [{ type: "palette", icon: Droplet, label: "Extract palette", hint: "Pull colors from a photo" }]),
       ],
     },
     {
@@ -7066,19 +6499,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                 <DropdownMenuItem onClick={() => setShowCalendarSheet(true)} data-testid="menu-view-calendar">
                   <CalendarDays className="h-4 w-4 mr-2" /> View Calendar
                 </DropdownMenuItem>
-                {isAdmin && (
-                  <DropdownMenuItem
-                    onClick={() => {
-                      setSaveTemplateName(selectedBoard?.name ? `${selectedBoard.name} template` : "");
-                      setSaveTemplateDesc("");
-                      setSaveTemplateError(null);
-                      setShowSaveTemplateDialog(true);
-                    }}
-                    data-testid="menu-save-as-template"
-                  >
-                    <Save className="h-4 w-4 mr-2" /> Save as template
-                  </DropdownMenuItem>
-                )}
                 <DropdownMenuItem onClick={() => setShowClearMockupConfirm(true)} data-testid="menu-clear-mockup">
                   <Eraser className="h-4 w-4 mr-2" /> Clear mock-up
                 </DropdownMenuItem>
@@ -7130,50 +6550,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                 if (boardMode === "library") deleteCategoryEverywhere(name);
                 else deleteRoomEverywhere(name);
               }}
-              onRenderRoom={
-                boardMode === "project" && (effectiveRole === "admin" || effectiveRole === "crew")
-                  ? (room) => setRenderRoomName(room)
-                  : undefined
-              }
-              onExportSpec={
-                boardMode === "project" && (effectiveRole === "admin" || effectiveRole === "crew")
-                  ? async (room) => {
-                      if (exportingSpecRoom) return;
-                      setExportingSpecRoom(room);
-                      try {
-                        const res = await fetch(`/api/projects/${projectId}/spec-sheet`, {
-                          method: "POST",
-                          credentials: "include",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ room }),
-                        });
-                        if (!res.ok) {
-                          let msg = "Couldn't generate spec sheet.";
-                          try { const data = await res.json(); if (data?.message) msg = data.message; } catch { /* ignore */ }
-                          toast({ title: "Spec sheet failed", description: msg, variant: "destructive" });
-                          return;
-                        }
-                        const blob = await res.blob();
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement("a");
-                        a.href = url;
-                        const projectSafe = ((clientProject as any)?.name || "project")
-                          .replace(/[^a-z0-9-_ ]/gi, "")
-                          .replace(/\s+/g, "_");
-                        const roomSafe = room.replace(/[^a-z0-9-_ ]/gi, "").replace(/\s+/g, "_") || "room";
-                        a.download = `spec-sheet-${projectSafe}_${roomSafe}.pdf`;
-                        document.body.appendChild(a);
-                        a.click();
-                        a.remove();
-                        URL.revokeObjectURL(url);
-                      } catch (err: any) {
-                        toast({ title: "Spec sheet failed", description: err?.message || "Network error", variant: "destructive" });
-                      } finally {
-                        setExportingSpecRoom(null);
-                      }
-                    }
-                  : undefined
-              }
               inline
             />
           </>
@@ -8560,12 +7936,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                   style={{ cursor: "crosshair", touchAction: "none" }}
                   data-testid="draw-overlay-canvas"
                 />
-                {autoTextConverting && (
-                  <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-[102] bg-card border border-border rounded-lg shadow-lg px-4 py-2 flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                    <span className="text-xs text-muted-foreground">Recognizing text...</span>
-                  </div>
-                )}
                 <div
                   className="absolute bottom-2 left-1/2 -translate-x-1/2 z-[101] flex flex-wrap items-center justify-center gap-1.5 bg-card border border-border rounded-lg shadow-lg px-2 py-1.5 max-w-[calc(100vw-2rem)] max-h-[40vh] overflow-y-auto"
                   onMouseDown={(e) => e.stopPropagation()}
@@ -8585,7 +7955,7 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                     <TooltipTrigger asChild>
                       <button
                         className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30"
-                        disabled={drawingPaths.length === 0 || aiProcessing}
+                        disabled={drawingPaths.length === 0}
                         onClick={() => {
                           setDrawUndoStack((s) => [...s, ...drawingPaths]);
                           const result = recognizeAllShapes(drawingPaths);
@@ -8600,94 +7970,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="top"><p>Snap to shapes</p></TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30"
-                        disabled={drawingPaths.length === 0 || aiProcessing}
-                        onClick={async () => {
-                          const canvas = drawCanvasRef.current;
-                          if (!canvas) return;
-                          setAiProcessing(true);
-                          try {
-                            const tempCanvas = document.createElement("canvas");
-                            tempCanvas.width = canvas.width;
-                            tempCanvas.height = canvas.height;
-                            const tempCtx = tempCanvas.getContext("2d");
-                            if (!tempCtx) return;
-                            tempCtx.fillStyle = "#ffffff";
-                            tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-                            tempCtx.translate(pan.x, pan.y);
-                            tempCtx.scale(zoom, zoom);
-                            drawingPaths.forEach((path: any) => {
-                              if (!path.points || path.points.length < 2) return;
-                              tempCtx.beginPath();
-                              tempCtx.strokeStyle = path.color || "#000000";
-                              tempCtx.lineWidth = (path.strokeWidth || 3) / zoom;
-                              tempCtx.lineCap = "round";
-                              tempCtx.lineJoin = "round";
-                              tempCtx.moveTo(path.points[0].x, path.points[0].y);
-                              for (let i = 1; i < path.points.length; i++) {
-                                tempCtx.lineTo(path.points[i].x, path.points[i].y);
-                              }
-                              tempCtx.stroke();
-                            });
-                            const imageData = tempCanvas.toDataURL("image/png");
-                            const resp = await fetch("/api/ai/recognize-handwriting", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              credentials: "include",
-                              body: JSON.stringify({ imageData }),
-                            });
-                            if (!resp.ok) throw new Error("Server error");
-                            const data = await resp.json();
-                            if (data.text && data.text.trim() && selectedBoardId) {
-                              const bb = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-                              drawingPaths.forEach((path: any) => {
-                                path.points?.forEach((pt: any) => {
-                                  if (pt.x < bb.minX) bb.minX = pt.x;
-                                  if (pt.y < bb.minY) bb.minY = pt.y;
-                                  if (pt.x > bb.maxX) bb.maxX = pt.x;
-                                  if (pt.y > bb.maxY) bb.maxY = pt.y;
-                                });
-                              });
-                              const noteX = isFinite(bb.minX) ? bb.minX : 100;
-                              const noteY = isFinite(bb.minY) ? bb.minY - 20 : 100;
-                              const newZ = maxZ;
-                              setMaxZ(newZ + 1);
-                              const created = await createCanvasElement(selectedBoardId, {
-                                type: "text",
-                                x: noteX,
-                                y: noteY,
-                                width: Math.max(240, bb.maxX - bb.minX + 40),
-                                height: Math.max(100, bb.maxY - bb.minY + 40),
-                                z_index: newZ,
-                                content: { variant: "note", title: "", text: data.text.trim() },
-                              });
-                              addElement(created);
-                              sendElementAdd(created);
-                              setDrawingPaths([]);
-                              drawPathsRef.current = [];
-                              setDrawUndoStack([]);
-                              redrawOverlayCanvas();
-                              toast({ title: "Text Recognized", description: `Created note: "${data.text.trim().substring(0, 50)}"` });
-                            } else {
-                              toast({ title: "No Text Found", description: "Could not identify any handwriting in the drawing", variant: "destructive" });
-                            }
-                          } catch (err) {
-                            console.error("Handwriting recognition failed:", err);
-                            toast({ title: "Error", description: "Failed to recognize handwriting", variant: "destructive" });
-                          } finally {
-                            setAiProcessing(false);
-                          }
-                        }}
-                        data-testid="draw-tool-handwriting"
-                      >
-                        {aiProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <TypeIcon className="h-4 w-4" />}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top"><p>Convert handwriting to text</p></TooltipContent>
                   </Tooltip>
                   <div className="w-px h-5 bg-border" />
                   <Button size="sm" variant="ghost" className="text-destructive text-xs px-1.5 sm:px-2" onClick={() => { setDrawingPaths([]); drawPathsRef.current = []; setDrawUndoStack([]); setDrawingMode(false); }} data-testid="draw-tool-discard"><X className="h-3.5 w-3.5 sm:mr-1" /><span className="hidden sm:inline">Discard</span></Button>
@@ -8825,196 +8107,61 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
 
       {/* Dialogs */}
       <Dialog open={showNewBoardDialog} onOpenChange={(open) => { if (!open) { closeNewBoardDialog(); } }}>
-        <DialogContent className="sm:max-w-4xl p-0 gap-0 overflow-hidden">
-          {(() => {
-            const selectedTmpl = isAdmin && selectedTemplateId
-              ? templateCatalogue.find((t) => t.id === selectedTemplateId)
-              : null;
-            const showGallery = isAdmin && templateCatalogue.length > 0;
-            const effectiveName = newBoardName.trim() || selectedTmpl?.name || "";
-            const canCreate = effectiveName.length > 0;
-            return (
-              <>
-                <DialogHeader className="px-6 pt-5 pb-4 border-b border-border/60">
-                  <DialogTitle className="text-lg">Create a new board</DialogTitle>
-                  <DialogDescription className="text-xs">
-                    {showGallery
-                      ? "Pick a starting point. You'll name the board after."
-                      : "Give your board a name to get started."}
-                  </DialogDescription>
-                </DialogHeader>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg">Create a new board</DialogTitle>
+            <DialogDescription className="text-xs">Give your board a name to get started.</DialogDescription>
+          </DialogHeader>
 
-                <div className="flex flex-col md:flex-row max-h-[70vh]">
-                  {showGallery && (
-                    <div className="flex-1 min-w-0 overflow-y-auto px-6 py-5" data-testid="template-picker-grid">
-                      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                        {/* Blank tile */}
-                        <button
-                          type="button"
-                          onClick={() => setSelectedTemplateId(null)}
-                          onDoubleClick={() => { setSelectedTemplateId(null); void handleCreateBoard(); }}
-                          className={`group overflow-hidden rounded-xl border bg-card text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${selectedTemplateId === null ? "border-primary ring-2 ring-primary" : "border-border/70"}`}
-                          data-testid="template-blank"
-                        >
-                          <div className="flex h-28 items-center justify-center bg-gradient-to-br from-muted/80 to-muted/40">
-                            <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border/60 bg-background/90 shadow-sm">
-                              <FileText className="h-5 w-5 text-muted-foreground" />
-                            </div>
-                          </div>
-                          <div className="p-3">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-xs font-semibold uppercase tracking-wide">Blank board</span>
-                              {selectedTemplateId === null && <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">Selected</Badge>}
-                            </div>
-                            <span className="mt-1 block text-[11px] leading-snug text-muted-foreground">Start with an empty canvas.</span>
-                          </div>
-                        </button>
-                        {templateCatalogue.map((tmpl) => {
-                          const IconComp = tmpl.icon === "ChefHat" ? ChefHat : tmpl.icon === "Bath" ? Bath : tmpl.icon === "Home" ? Home : tmpl.icon === "Palette" ? Palette : LayoutPanelLeft;
-                          const isSel = selectedTemplateId === tmpl.id;
-                          // Legacy curated templates shipped a preview PNG keyed
-                          // off the slug. User-saved templates have no preview
-                          // image — render a clean iconic tile in that case.
-                          const previewSrc = templatePreviewById[tmpl.id];
-                          return (
-                            <div key={tmpl.id} className="relative group/template">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedTemplateId(tmpl.id)}
-                                onDoubleClick={() => { setSelectedTemplateId(tmpl.id); void handleCreateBoard(); }}
-                                className={`group block w-full overflow-hidden rounded-xl border bg-card text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${isSel ? "border-primary ring-2 ring-primary" : "border-border/70"}`}
-                                data-testid={`template-${tmpl.id}`}
-                              >
-                                <div className="relative h-28 overflow-hidden">
-                                  {previewSrc ? (
-                                    <>
-                                      <img
-                                        src={previewSrc}
-                                        alt={tmpl.name}
-                                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                                        data-testid={`img-template-${tmpl.id}`}
-                                      />
-                                      <div className="absolute inset-0 bg-gradient-to-t from-background/85 via-background/20 to-transparent" />
-                                    </>
-                                  ) : (
-                                    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-muted/80 to-muted/40">
-                                      <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border/60 bg-background/90 shadow-sm">
-                                        <IconComp className="h-5 w-5 text-muted-foreground" />
-                                      </div>
-                                    </div>
-                                  )}
-                                  {previewSrc && (
-                                    <div className="absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-background/85 shadow-sm">
-                                      <IconComp className="h-4 w-4 text-foreground/70" />
-                                    </div>
-                                  )}
-                                  {isSel && <Badge className="absolute right-2 top-2 h-5 px-1.5 text-[10px]">Selected</Badge>}
-                                </div>
-                                <div className="p-3">
-                                  <span className="block text-xs font-semibold uppercase tracking-wide">{tmpl.name}</span>
-                                  {tmpl.description && (
-                                    <span className="mt-1 block text-[11px] leading-snug text-muted-foreground line-clamp-2">{tmpl.description}</span>
-                                  )}
-                                </div>
-                              </button>
-                              {/* Delete affordance — user can prune their own template library. */}
-                              <button
-                                type="button"
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  if (!confirm(`Delete the template "${tmpl.name}"?`)) return;
-                                  try {
-                                    const res = await fetch(`/api/board-templates/${tmpl.id}`, {
-                                      method: "DELETE",
-                                      credentials: "include",
-                                    });
-                                    if (!res.ok) throw new Error("Could not delete template");
-                                    if (selectedTemplateId === tmpl.id) setSelectedTemplateId(null);
-                                    queryClient.invalidateQueries({ queryKey: ["/api/board-templates"] });
-                                  } catch (err: any) {
-                                    toast({ title: "Could not delete template", description: err?.message ?? "", variant: "destructive" });
-                                  }
-                                }}
-                                className="absolute right-1.5 top-1.5 z-10 hidden h-6 w-6 items-center justify-center rounded-full bg-background/95 text-muted-foreground shadow-sm hover:text-destructive group-hover/template:flex"
-                                aria-label={`Delete ${tmpl.name}`}
-                                data-testid={`button-delete-template-${tmpl.id}`}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="new-board-name" className="text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">Board name</Label>
+              <Input
+                id="new-board-name"
+                placeholder="e.g. Master Bath Reno"
+                value={newBoardName}
+                onChange={(e) => setNewBoardName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && newBoardName.trim()) handleCreateBoard(); }}
+                data-testid="input-new-board-name"
+                autoFocus
+              />
+            </div>
 
-                  {/* Right side panel — board details */}
-                  <div className={`${showGallery ? "md:w-[300px] md:border-l border-t md:border-t-0 border-border/60" : ""} flex flex-col bg-muted/20 px-6 py-5 gap-4`}>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="new-board-name" className="text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">Board name</Label>
-                      <Input
-                        id="new-board-name"
-                        placeholder={selectedTmpl?.name || "e.g. Master Bath Reno"}
-                        value={newBoardName}
-                        onChange={(e) => setNewBoardName(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter" && canCreate) handleCreateBoard(); }}
-                        data-testid="input-new-board-name"
-                        autoFocus
-                      />
-                      {selectedTmpl && !newBoardName.trim() && (
-                        <p className="text-[10px] text-muted-foreground">Defaults to “{selectedTmpl.name}” if left blank.</p>
-                      )}
-                    </div>
+            <div className="space-y-1.5" data-testid="new-board-mode-picker">
+              <Label className="text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">Board type</Label>
+              <div className="grid grid-cols-1 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setNewBoardMode("project")}
+                  className={`text-left rounded-md border p-2.5 transition-colors ${newBoardMode === "project" ? "border-primary ring-1 ring-primary bg-primary/5" : "border-border/70 hover:border-primary/40 bg-background"}`}
+                  data-testid="new-board-mode-project"
+                >
+                  <div className="text-xs font-semibold">Project board</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">Tabs are rooms — Kitchen, Powder…</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewBoardMode("library")}
+                  className={`text-left rounded-md border p-2.5 transition-colors ${newBoardMode === "library" ? "border-primary ring-1 ring-primary bg-primary/5" : "border-border/70 hover:border-primary/40 bg-background"}`}
+                  data-testid="new-board-mode-library"
+                >
+                  <div className="text-xs font-semibold">Library board</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">Tabs are categories — Fabric, Stone…</div>
+                </button>
+              </div>
+            </div>
+          </div>
 
-                    <div className="space-y-1.5" data-testid="new-board-mode-picker">
-                      <Label className="text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">Board type</Label>
-                      <div className="grid grid-cols-1 gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setNewBoardMode("project")}
-                          className={`text-left rounded-md border p-2.5 transition-colors ${newBoardMode === "project" ? "border-primary ring-1 ring-primary bg-primary/5" : "border-border/70 hover:border-primary/40 bg-background"}`}
-                          data-testid="new-board-mode-project"
-                        >
-                          <div className="text-xs font-semibold">Project board</div>
-                          <div className="text-[10px] text-muted-foreground mt-0.5">Tabs are rooms — Kitchen, Powder…</div>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setNewBoardMode("library")}
-                          className={`text-left rounded-md border p-2.5 transition-colors ${newBoardMode === "library" ? "border-primary ring-1 ring-primary bg-primary/5" : "border-border/70 hover:border-primary/40 bg-background"}`}
-                          data-testid="new-board-mode-library"
-                        >
-                          <div className="text-xs font-semibold">Library board</div>
-                          <div className="text-[10px] text-muted-foreground mt-0.5">Tabs are categories — Fabric, Stone…</div>
-                        </button>
-                      </div>
-                    </div>
-
-                    {selectedTmpl && (
-                      <div className="rounded-md bg-background border border-border/60 p-3 space-y-1" data-testid="template-summary">
-                        <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">Template</div>
-                        <div className="text-xs font-semibold">{selectedTmpl.name}</div>
-                        <div className="text-[11px] text-muted-foreground leading-snug">{selectedTmpl.description}</div>
-                      </div>
-                    )}
-
-                    <div className="flex-1" />
-                  </div>
-                </div>
-
-                <DialogFooter className="px-6 py-4 border-t border-border/60 bg-background">
-                  <Button variant="outline" onClick={closeNewBoardDialog} data-testid="button-cancel-new-board">Cancel</Button>
-                  <Button
-                    onClick={handleCreateBoard}
-                    disabled={!canCreate}
-                    data-testid="button-confirm-new-board"
-                  >
-                    {selectedTmpl ? `Create from ${selectedTmpl.name}` : "Create board"}
-                  </Button>
-                </DialogFooter>
-              </>
-            );
-          })()}
+          <DialogFooter>
+            <Button variant="outline" onClick={closeNewBoardDialog} data-testid="button-cancel-new-board">Cancel</Button>
+            <Button
+              onClick={handleCreateBoard}
+              disabled={!newBoardName.trim()}
+              data-testid="button-confirm-new-board"
+            >
+              Create board
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -9028,80 +8175,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowRenameDialog(false)}>Cancel</Button>
             <Button onClick={handleRename} data-testid="button-confirm-rename">Rename</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Save the current board as a reusable template (admin only). */}
-      <Dialog open={showSaveTemplateDialog} onOpenChange={(open) => { if (!open) setShowSaveTemplateDialog(false); }}>
-        <DialogContent data-testid="save-template-dialog">
-          <DialogHeader>
-            <DialogTitle>Save board as template</DialogTitle>
-            <DialogDescription>
-              Captures the current canvas as a reusable starting point. Future
-              edits to this board won't change the saved template.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label htmlFor="save-template-name" className="text-xs uppercase tracking-wider text-muted-foreground">Template name</Label>
-              <Input
-                id="save-template-name"
-                value={saveTemplateName}
-                onChange={(e) => { setSaveTemplateName(e.target.value); setSaveTemplateError(null); }}
-                placeholder="e.g. Lakeside cottage moodboard"
-                disabled={saveTemplateBusy}
-                data-testid="input-save-template-name"
-                autoFocus
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="save-template-desc" className="text-xs uppercase tracking-wider text-muted-foreground">Description (optional)</Label>
-              <Input
-                id="save-template-desc"
-                value={saveTemplateDesc}
-                onChange={(e) => setSaveTemplateDesc(e.target.value)}
-                placeholder="Short note about when to use it"
-                disabled={saveTemplateBusy}
-                data-testid="input-save-template-desc"
-              />
-            </div>
-            {saveTemplateError && (
-              <div className="text-[11px] text-destructive leading-snug" data-testid="text-save-template-error">{saveTemplateError}</div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowSaveTemplateDialog(false)} disabled={saveTemplateBusy}>Cancel</Button>
-            <Button
-              onClick={async () => {
-                if (!selectedBoardId) return;
-                const name = saveTemplateName.trim();
-                if (!name) { setSaveTemplateError("Give the template a name."); return; }
-                setSaveTemplateBusy(true);
-                setSaveTemplateError(null);
-                try {
-                  const res = await fetch("/api/board-templates", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    credentials: "include",
-                    body: JSON.stringify({ boardId: selectedBoardId, name, description: saveTemplateDesc.trim() || undefined }),
-                  });
-                  const data = await res.json().catch(() => ({}));
-                  if (!res.ok) throw new Error((data && (data.detail || data.message)) || "Could not save template.");
-                  queryClient.invalidateQueries({ queryKey: ["/api/board-templates"] });
-                  toast({ title: "Template saved", description: `"${name}" is now in the template picker.` });
-                  setShowSaveTemplateDialog(false);
-                } catch (err: any) {
-                  setSaveTemplateError(err?.message ?? "Could not save template.");
-                } finally {
-                  setSaveTemplateBusy(false);
-                }
-              }}
-              disabled={saveTemplateBusy || !saveTemplateName.trim()}
-              data-testid="button-confirm-save-template"
-            >
-              {saveTemplateBusy ? "Saving…" : "Save template"}
-            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -9529,38 +8602,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
         onSubmit={createHardware}
       />
 
-      {renderRoomName && selectedBoardId && (() => {
-        const target = renderRoomName.trim().toLowerCase();
-        const zone = elementsList.find((e) => {
-          if (e.type !== "room_zone") return false;
-          const c = (e.content || {}) as any;
-          const n = String(c.name || c.title || c.label || "").trim().toLowerCase();
-          return n === target;
-        });
-        const sourceUrl = zone ? ((zone.content as any)?.sourcePhotoUrl ?? null) : null;
-        return (
-          <RoomRenderDialog
-            open={!!renderRoomName}
-            onOpenChange={(v) => { if (!v) setRenderRoomName(null); }}
-            projectId={projectId}
-            boardId={selectedBoardId}
-            roomName={renderRoomName}
-            roomZoneElementId={zone?.id ?? null}
-            initialSourcePhotoUrl={sourceUrl}
-            onSourcePhotoUpdated={(url) => {
-              if (!zone) return;
-              updateElement(zone.id, {
-                content: { ...((zone.content as any) || {}), sourcePhotoUrl: url },
-              } as any);
-            }}
-            onAccept={(url) => {
-              createImageFromUrl(url, `Room render — ${renderRoomName ?? ""}`.trim());
-              setRenderRoomName(null);
-            }}
-          />
-        );
-      })()}
-
       <Dialog open={addCollectionOpen} onOpenChange={(o) => { if (!o) { setAddCollectionOpen(false); setAddCollectionName(""); } }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -9627,32 +8668,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
           }
           setCropTargetId(null);
         }}
-      />
-
-      <PaletteExtractionDialog
-        open={showPaletteDialog}
-        onOpenChange={(v) => {
-          setShowPaletteDialog(v);
-          if (!v) {
-            setPalettePresetUrl(null);
-            palettePresetSourceRef.current = null;
-          }
-        }}
-        boardImages={elementsList
-          .filter((e) => e.type === "image" && (e.content as any)?.url)
-          .map((e) => ({ id: e.id, url: (e.content as any).url, caption: (e.content as any).caption }))}
-        roomSuggestions={Array.from(new Set(
-          elementsList
-            .filter((e) => e.type === "room_zone" && (e.content as any)?.title)
-            .map((e) => String((e.content as any).title).trim())
-            .filter(Boolean)
-        ))}
-        uploadImage={async (file: File) => {
-          const result = await uploadImage(file);
-          return result.url;
-        }}
-        onAdd={createPaletteSwatches}
-        presetImageUrl={palettePresetUrl}
       />
 
       {/* Side drawers — Photos / Furniture / Materials. Mutually exclusive so opening
