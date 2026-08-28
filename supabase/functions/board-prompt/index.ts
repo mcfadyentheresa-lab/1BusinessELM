@@ -9,9 +9,31 @@ const corsHeaders = {
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 
+// Guardrails against an authenticated-but-unrelated caller using this as an
+// unmetered proxy to the Anthropic API: cap request size before parsing,
+// require a boardId the caller can actually read (RLS-enforced via their own
+// JWT, not a role check we'd have to keep in sync by hand), and clamp every
+// user-controlled field going into the prompt.
+const MAX_BODY_BYTES = 60_000;
+const MAX_PROMPT_LEN = 4_000;
+const MAX_MESSAGES = 20;
+const MAX_MESSAGE_LEN = 4_000;
+const MAX_ROOMS = 50;
+const MAX_ITEMS_PER_ROOM = 200;
+const MAX_PALETTE = 200;
+const MAX_MATERIALS = 200;
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
+  }
+
+  const contentLength = Number(req.headers.get("content-length") ?? "0");
+  if (contentLength > MAX_BODY_BYTES) {
+    return new Response(JSON.stringify({ error: "Request too large" }), {
+      status: 413,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   // --- Auth: verify JWT ---
@@ -23,11 +45,16 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-  const authClient = createClient(
+  // A client scoped to the caller's own JWT — every query through this runs
+  // under their RLS, so "can this user see this board" is answered by the
+  // same policies that already gate the board itself, not a role check we'd
+  // have to keep in sync by hand.
+  const userClient = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_ANON_KEY")!,
+    { global: { headers: { Authorization: `Bearer ${token}` } } },
   );
-  const { data: userData, error: userErr } = await authClient.auth.getUser(token);
+  const { data: userData, error: userErr } = await userClient.auth.getUser(token);
   if (userErr || !userData.user) {
     return new Response(JSON.stringify({ error: "Invalid auth token" }), {
       status: 401,
@@ -37,16 +64,51 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
-    const { rooms, palette, materials, inspirationCount, prompt, messages } = body;
+    const { boardId, rooms, palette, materials, inspirationCount, prompt, messages } = body;
 
-    if (!prompt?.trim()) {
-      return new Response(JSON.stringify({ error: "prompt is required" }), {
+    const boardIdNum = Number(boardId);
+    if (!Number.isInteger(boardIdNum) || boardIdNum <= 0) {
+      return new Response(JSON.stringify({ error: "boardId is required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const boardContext = buildBoardContext({ rooms, palette, materials, inspirationCount });
+    const { data: board, error: boardErr } = await userClient
+      .from("planning_boards")
+      .select("id")
+      .eq("id", boardIdNum)
+      .maybeSingle();
+    if (boardErr || !board) {
+      return new Response(JSON.stringify({ error: "Board not found" }), {
+        status: 404,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (typeof prompt !== "string" || !prompt.trim()) {
+      return new Response(JSON.stringify({ error: "prompt is required" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const clampedPrompt = prompt.trim().slice(0, MAX_PROMPT_LEN);
+
+    const clampedRooms = Array.isArray(rooms)
+      ? rooms.slice(0, MAX_ROOMS).map((r: any) => ({
+          ...r,
+          items: Array.isArray(r?.items) ? r.items.slice(0, MAX_ITEMS_PER_ROOM) : [],
+        }))
+      : [];
+    const clampedPalette = Array.isArray(palette) ? palette.slice(0, MAX_PALETTE) : [];
+    const clampedMaterials = Array.isArray(materials) ? materials.slice(0, MAX_MATERIALS) : [];
+
+    const boardContext = buildBoardContext({
+      rooms: clampedRooms,
+      palette: clampedPalette,
+      materials: clampedMaterials,
+      inspirationCount,
+    });
 
     const systemPrompt = `You are a co-designer working alongside an interior designer on a renovation project. You are collaborative, specific, and grounded in what's actually on their board. Your tone is like a skilled colleague—direct, warm, and practical. Never be sycophantic.
 
@@ -58,13 +120,13 @@ ACTION_ADD_NOTE: [the exact text for the note]
 Keep responses concise—2-4 sentences unless more detail is clearly needed. Be specific about what's on the board.`;
 
     // Build Anthropic-format messages (no system role in array)
-    const priorMessages = Array.isArray(messages) ? messages.slice(-20) : [];
+    const priorMessages = Array.isArray(messages) ? messages.slice(-MAX_MESSAGES) : [];
     const anthropicMessages = [
       ...priorMessages.map((m: { role: string; content: string }) => ({
         role: m.role === "assistant" ? "assistant" : "user",
-        content: m.content,
+        content: typeof m.content === "string" ? m.content.slice(0, MAX_MESSAGE_LEN) : "",
       })),
-      { role: "user", content: prompt.trim() },
+      { role: "user", content: clampedPrompt },
     ];
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {

@@ -9,9 +9,26 @@ const corsHeaders = {
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 
+// Same guardrails as board-prompt: cap request size before parsing, require
+// a boardId the caller can actually read (RLS-enforced via their own JWT),
+// and clamp every user-controlled field going into the prompt.
+const MAX_BODY_BYTES = 60_000;
+const MAX_ROOMS = 50;
+const MAX_ITEMS_PER_ROOM = 200;
+const MAX_PALETTE = 200;
+const MAX_MATERIALS = 200;
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
+  }
+
+  const contentLength = Number(req.headers.get("content-length") ?? "0");
+  if (contentLength > MAX_BODY_BYTES) {
+    return new Response(JSON.stringify({ error: "Request too large" }), {
+      status: 413,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   // --- Auth: verify JWT ---
@@ -23,11 +40,16 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-  const authClient = createClient(
+  // A client scoped to the caller's own JWT — every query through this runs
+  // under their RLS, so "can this user see this board" is answered by the
+  // same policies that already gate the board itself, not a role check we'd
+  // have to keep in sync by hand.
+  const userClient = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_ANON_KEY")!,
+    { global: { headers: { Authorization: `Bearer ${token}` } } },
   );
-  const { data: userData, error: userErr } = await authClient.auth.getUser(token);
+  const { data: userData, error: userErr } = await userClient.auth.getUser(token);
   if (userErr || !userData.user) {
     return new Response(JSON.stringify({ error: "Invalid auth token" }), {
       status: 401,
@@ -37,9 +59,43 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
-    const { rooms, palette, materials, inspirationCount, focus } = body;
+    const { boardId, rooms, palette, materials, inspirationCount, focus } = body;
 
-    const boardContext = buildBoardContext({ rooms, palette, materials, inspirationCount });
+    const boardIdNum = Number(boardId);
+    if (!Number.isInteger(boardIdNum) || boardIdNum <= 0) {
+      return new Response(JSON.stringify({ error: "boardId is required" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { data: board, error: boardErr } = await userClient
+      .from("planning_boards")
+      .select("id")
+      .eq("id", boardIdNum)
+      .maybeSingle();
+    if (boardErr || !board) {
+      return new Response(JSON.stringify({ error: "Board not found" }), {
+        status: 404,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const clampedRooms = Array.isArray(rooms)
+      ? rooms.slice(0, MAX_ROOMS).map((r: any) => ({
+          ...r,
+          items: Array.isArray(r?.items) ? r.items.slice(0, MAX_ITEMS_PER_ROOM) : [],
+        }))
+      : [];
+    const clampedPalette = Array.isArray(palette) ? palette.slice(0, MAX_PALETTE) : [];
+    const clampedMaterials = Array.isArray(materials) ? materials.slice(0, MAX_MATERIALS) : [];
+
+    const boardContext = buildBoardContext({
+      rooms: clampedRooms,
+      palette: clampedPalette,
+      materials: clampedMaterials,
+      inspirationCount,
+    });
 
     const systemPrompt = `You are a senior interior designer reviewing a colleague's project board. Give a concise, honest, and constructive read of the board — what's working, what's missing, and one or two concrete next steps. Be specific about the actual items on the board. Write in flowing paragraphs, not bullet points. Aim for 3–5 paragraphs.`;
 
