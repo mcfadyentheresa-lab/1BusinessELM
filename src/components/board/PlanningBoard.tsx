@@ -2113,20 +2113,13 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       return null;
     }
     try {
-      const fd = new FormData();
-      fd.append("image", file);
-      const res = await fetch("/api/upload", { method: "POST", credentials: "include", body: fd });
-      const data = await res.json();
-      if (!res.ok) {
-        toast({ title: "Upload failed", description: data?.message || "Try again.", variant: "destructive" });
-        return null;
-      }
-      return typeof data?.url === "string" ? data.url : null;
+      const result = await uploadImage(file);
+      return result.url;
     } catch (err) {
       toast({ title: "Upload failed", description: "Network error.", variant: "destructive" });
       return null;
     }
-  }, [toast]);
+  }, [toast, uploadImage]);
 
   // Re-host an external image URL through our /api/uploads/from-url proxy so
   // it's served from our own bucket. Bypasses Referer-based hotlink protection
