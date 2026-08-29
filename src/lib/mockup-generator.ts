@@ -153,32 +153,24 @@ export async function createMockupElements(
   variantIndex?: number
 ): Promise<CanvasElement[]> {
   const result = await sourceMockupSeeds(projectId, roomName, variantIndex);
-  const created: CanvasElement[] = [];
-  let z = startZ;
-  for (const seed of result.seeds) {
-    const x = Math.round(seed.x / GRID) * GRID;
-    const y = Math.round(seed.y / GRID) * GRID;
-    const { data, error } = await supabase
-      .from("canvas_elements")
-      .insert({
-        board_id: boardId,
-        type: seed.type,
-        x,
-        y,
-        width: seed.width,
-        height: seed.height,
-        z_index: z,
-        content: seed.content as any,
-        is_mockup: true,
-      })
-      .select()
-      .single();
-    if (!error && data) {
-      created.push(data as CanvasElement);
-      z++;
-    }
+  if (result.seeds.length === 0) return [];
+  const rows = result.seeds.map((seed, i) => ({
+    board_id: boardId,
+    type: seed.type,
+    x: Math.round(seed.x / GRID) * GRID,
+    y: Math.round(seed.y / GRID) * GRID,
+    width: seed.width,
+    height: seed.height,
+    z_index: startZ + i,
+    content: seed.content as any,
+    is_mockup: true,
+  }));
+  const { data, error } = await supabase.from("canvas_elements").insert(rows).select();
+  if (error) {
+    console.error("[mockup-generator] Failed to create mockup elements", error);
+    return [];
   }
-  return created;
+  return (data ?? []) as CanvasElement[];
 }
 
 export async function deleteMockupElements(boardId: number): Promise<number> {

@@ -7008,13 +7008,13 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                       </TooltipTrigger>
                       <TooltipContent side="bottom" className="text-xs">
                         <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ backgroundColor: avatarColor }} />
-                        {c.firstName || c.name} {c.lastName} is editing
+                        {c.firstName || c.name} {c.lastName} is viewing this board
                       </TooltipContent>
                     </Tooltip>
                   );
                 })}
               </div>
-              <span className="text-xs text-muted-foreground">{collaborators.length} live</span>
+              <span className="text-xs text-muted-foreground">{collaborators.length} viewing</span>
             </div>
           )}
           </div>
