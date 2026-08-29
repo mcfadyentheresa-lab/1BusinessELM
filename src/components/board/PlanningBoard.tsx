@@ -3938,6 +3938,140 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     });
   };
 
+  // Group every room's cards into its own column, side by side, so palettes
+  // and materials can be scanned across rooms at a glance — a quick visual
+  // gut-check for cohesiveness, not a permanent layout. Reuses the same
+  // move/undo/save plumbing as Tidy board, just bucketed by resolved room
+  // first. Elements with no resolvable room land in a trailing "Unassigned"
+  // column rather than being skipped.
+  const handleTidyByRoom = () => {
+    if (!selectedBoardId || lockLayout) return;
+
+    if (tidyCandidates.length < 2) {
+      toast({
+        title: "Nothing to group yet",
+        description: "Add a few cards or images first.",
+      });
+      return;
+    }
+
+    const byRoom = new Map<string, CanvasElement[]>();
+    const unassigned: CanvasElement[] = [];
+    for (const el of tidyCandidates) {
+      const room = elementRoomById[el.id];
+      if (room) {
+        if (!byRoom.has(room)) byRoom.set(room, []);
+        byRoom.get(room)!.push(el);
+      } else {
+        unassigned.push(el);
+      }
+    }
+
+    const orderedRooms = roomNames.filter((r) => byRoom.has(r));
+    if (orderedRooms.length === 0) {
+      toast({
+        title: "No rooms to group by",
+        description: "Tag a few cards with a room, or add a room zone, first.",
+      });
+      return;
+    }
+    if (unassigned.length > 0) {
+      byRoom.set("Unassigned", unassigned);
+      orderedRooms.push("Unassigned");
+    }
+
+    const gap = 24;
+    const columnGap = 72;
+    const snap = (value: number) => Math.round(value / GRID_SIZE) * GRID_SIZE;
+    const widthOf = (el: CanvasElement) => Math.max(120, el.width || 240);
+    const heightOf = (el: CanvasElement) => Math.max(60, el.height || 140);
+    const startX = snap(Math.min(...tidyCandidates.map((el) => el.x)));
+    const startY = snap(Math.min(...tidyCandidates.map((el) => el.y)));
+
+    const isHeading = (el: CanvasElement) => {
+      const c = (el.content || {}) as any;
+      return isTextHeading(el) || (el.type === "text" && c.variant === "heading");
+    };
+    const isSelection = (el: CanvasElement) =>
+      el.type === "surface" || el.type === "product" || el.type === "hardware" || el.type === "board_link";
+    const isVisual = (el: CanvasElement) => el.type === "image" || el.type === "link";
+
+    const nextPositions = new Map<number, { x: number; y: number }>();
+    let cursorX = startX;
+
+    for (const roomName of orderedRooms) {
+      const roomEls = byRoom.get(roomName) || [];
+      if (roomEls.length === 0) continue;
+
+      // Within a room's column: heading first, then the selections that
+      // actually carry the palette/material (what you're comparing), then
+      // reference photos, then notes/everything else.
+      const headings = roomEls.filter(isHeading);
+      const selections = roomEls.filter((el) => !isHeading(el) && isSelection(el));
+      const visuals = roomEls.filter((el) => !isHeading(el) && isVisual(el));
+      const rest = roomEls.filter(
+        (el) => !headings.includes(el) && !selections.includes(el) && !visuals.includes(el),
+      );
+      const ordered = [...headings, ...selections, ...visuals, ...rest];
+
+      const columnWidth = Math.max(200, ...ordered.map(widthOf));
+      let cursorY = startY;
+      for (const el of ordered) {
+        nextPositions.set(el.id, { x: cursorX, y: cursorY });
+        cursorY += heightOf(el) + gap;
+      }
+      cursorX += columnWidth + columnGap;
+    }
+
+    const movedIds: number[] = [];
+    const arrangedForFit: { x: number; y: number; width: number; height: number }[] = [];
+
+    for (const el of tidyCandidates) {
+      const next = nextPositions.get(el.id);
+      if (!next) continue;
+      const nextX = snap(next.x);
+      const nextY = snap(next.y);
+      arrangedForFit.push({ x: nextX, y: nextY, width: widthOf(el), height: heightOf(el) });
+      if (el.x === nextX && el.y === nextY) continue;
+      movedIds.push(el.id);
+      pushUndo();
+      updateElement(el.id, { x: nextX, y: nextY });
+      sendElementMove(el.id, nextX, nextY);
+    }
+
+    if (movedIds.length === 0) {
+      toast({ title: "Already grouped by room" });
+      return;
+    }
+
+    setDroppingIds((prev) => {
+      const next = new Set(prev);
+      movedIds.forEach((id) => next.add(id));
+      return next;
+    });
+    movedIds.forEach((id) => {
+      const existingTimer = droppingTimersRef.current.get(id);
+      if (existingTimer) clearTimeout(existingTimer);
+      const timer = setTimeout(() => {
+        droppingTimersRef.current.delete(id);
+        setDroppingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }, 350);
+      droppingTimersRef.current.set(id, timer);
+    });
+
+    debouncedSavePositions(selectedBoardId, 0);
+    if (activeRoom !== null) persistActiveRoom(null); // switch to "All rooms" so the comparison is actually visible
+    fitElementsToScreen(arrangedForFit, { animate: true });
+    toast({
+      title: "Grouped by room",
+      description: `Arranged ${movedIds.length} item${movedIds.length === 1 ? "" : "s"} into ${orderedRooms.length} room column${orderedRooms.length === 1 ? "" : "s"}.`,
+    });
+  };
+
   // Status quick-cycle — used by the contextual chip on roomable cards.
   const cycleStatusForElement = (id: number) => {
     const el = elements[id];
@@ -6942,6 +7076,14 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
                   >
                     <LayoutGrid className="h-4 w-4 mr-2" />
                     Tidy board
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={handleTidyByRoom}
+                    disabled={lockLayout || tidyCandidates.length < 2}
+                    data-testid="menu-tidy-by-room"
+                  >
+                    <Columns3 className="h-4 w-4 mr-2" />
+                    Group by room
                   </DropdownMenuItem>
               {(actualRole === "admin" || actualRole === "crew") && (
                 <>
