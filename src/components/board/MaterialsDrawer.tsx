@@ -318,7 +318,7 @@ export function MaterialsDrawer({ projectId, onAddImageUrl, activeRoom, activeRo
           <Layers className="h-10 w-10 text-muted-foreground/40" />
           <p className="text-sm font-medium text-foreground">Nothing in your assets yet</p>
           <p className="text-xs text-muted-foreground max-w-[300px]">
-            Upload a photo with the button above, or add a paint swatch, material, hardware, or product card to any board in this project.
+            Upload a photo with the button above to see it here.
           </p>
         </div>
       </div>
@@ -483,7 +483,7 @@ export function MaterialsDrawer({ projectId, onAddImageUrl, activeRoom, activeRo
           <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
             <Layers className="h-8 w-8 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">No matches</p>
-            <p className="text-[11px] text-muted-foreground/70 max-w-[260px]">Add a paint, material, hardware, or product card to any board to see it here.</p>
+            <p className="text-[11px] text-muted-foreground/70 max-w-[260px]">Upload a photo with the button above to see it here.</p>
           </div>
         ) : (
           <>
