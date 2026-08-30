@@ -4039,6 +4039,12 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       sendElementMove(el.id, nextX, nextY);
     }
 
+    // Switch to "All rooms" and fit the view regardless of whether anything
+    // actually moved — the point of this action is to see the comparison,
+    // and the board can already happen to be grouped (e.g. running it twice).
+    if (activeRoom !== null) persistActiveRoom(null);
+    fitElementsToScreen(arrangedForFit, { animate: true });
+
     if (movedIds.length === 0) {
       toast({ title: "Already grouped by room" });
       return;
@@ -4064,8 +4070,6 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
     });
 
     debouncedSavePositions(selectedBoardId, 0);
-    if (activeRoom !== null) persistActiveRoom(null); // switch to "All rooms" so the comparison is actually visible
-    fitElementsToScreen(arrangedForFit, { animate: true });
     toast({
       title: "Grouped by room",
       description: `Arranged ${movedIds.length} item${movedIds.length === 1 ? "" : "s"} into ${orderedRooms.length} room column${orderedRooms.length === 1 ? "" : "s"}.`,
