@@ -8840,7 +8840,11 @@ export default function SpatialCanvas({ projectId, projectName: _projectName, on
       <Sheet open={openDrawer === "materials"} modal={false} onOpenChange={(open) => { if (!open) setOpenDrawer(null); }}>
         <SheetContent
           side="right"
-          className="w-[480px] sm:max-w-[480px] p-0 flex flex-col"
+          // z-[116]: the AI co-designer rail (AIPartnerPanel) is a fixed,
+          // full-height z-[115] strip pinned to the same top-right corner —
+          // without this the drawer's own close button sits underneath it
+          // and clicks there open the co-designer instead of closing us.
+          className="w-[480px] sm:max-w-[480px] p-0 flex flex-col z-[116]"
           hideOverlay
           onInteractOutside={(e) => e.preventDefault()}
           data-testid="sheet-drawer-materials"
